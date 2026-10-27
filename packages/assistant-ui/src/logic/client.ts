@@ -4,9 +4,10 @@
 //   POST {api}/agent/chat                   -> { runId, sessionId }
 //   GET  {api}/agent/runs/:id/events?after=N -> { finished, events }
 //   POST {api}/agent/approve                -> ApproveResult
+//   POST {api}/agent/check                  -> CheckResult (read-only)
 //   POST {api}/agent/cancel                 -> { cancelled }
 
-import type { ApproveResult, StoredEvent } from './types';
+import type { ApproveResult, CheckResult, StoredEvent } from './types';
 
 export type AgentApiErrorKind = 'signed_out' | 'unavailable' | 'rate_limited' | 'network' | 'server' | 'bad_request';
 
@@ -26,6 +27,8 @@ export interface AgentClient {
   events(runId: string, after: number): Promise<{ finished: boolean; events: StoredEvent[] }>;
   approve(proposalId: string): Promise<ApproveResult>;
   cancel(proposalId: string): Promise<{ cancelled: boolean }>;
+  /** Is there an order for this proposal? Places nothing. */
+  check(proposalId: string): Promise<CheckResult>;
 }
 
 export interface AgentClientOptions {
@@ -93,5 +96,6 @@ export function createAgentClient(opts: AgentClientOptions): AgentClient {
     events: (runId, after) => request('GET', `/runs/${encodeURIComponent(runId)}/events?after=${after}`),
     approve: (proposalId) => request('POST', '/approve', { proposalId }),
     cancel: (proposalId) => request('POST', '/cancel', { proposalId }),
+    check: (proposalId) => request('POST', '/check', { proposalId }),
   };
 }

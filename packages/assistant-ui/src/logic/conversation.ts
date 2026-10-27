@@ -106,7 +106,10 @@ export function turnFailed(s: ConversationState, turnId: string, message: string
   return updateTurn(s, turnId, (t) => ({ ...t, status: 'failed', error: { message } }));
 }
 
-const OPEN_CARD = new Set(['awaiting', 'price_changed', 'uncertain', 'failed']);
+/** Cards that may still lead to an order: no choice buttons while one is open. */
+const OPEN_CARD = new Set(['awaiting', 'price_changed', 'uncertain', 'unverified', 'checking', 'failed']);
+/** Cards a newer quote replaces. Never a not-confirmed one: its order may exist. */
+const SUPERSEDABLE = new Set(['awaiting', 'price_changed', 'failed']);
 
 const asObj = (v: unknown): Record<string, any> => (v && typeof v === 'object' ? (v as Record<string, any>) : {});
 
@@ -165,7 +168,7 @@ function applyOne(s: ConversationState, turnId: string, stored: StoredEvent): Co
       const existing = s.cards[id];
       if (existing && (existing.status === 'placed' || existing.status === 'approving')) return s;
       const cards: Record<string, ApprovalCardState> = {};
-      for (const [k, c] of Object.entries(s.cards)) cards[k] = k !== id && OPEN_CARD.has(c.status) ? { ...c, status: 'superseded', message: 'Replaced by a newer quote.' } : c;
+      for (const [k, c] of Object.entries(s.cards)) cards[k] = k !== id && SUPERSEDABLE.has(c.status) ? { ...c, status: 'superseded', message: 'Replaced by a newer quote.' } : c;
       cards[id] =
         e.previousTotalNaira !== undefined
           ? { ...(existing ?? newCard(e.proposal)), proposal: e.proposal, status: 'price_changed', previousTotalNaira: e.previousTotalNaira }
@@ -213,6 +216,12 @@ function cardRow(id: string, card: ApprovalCardState, now: number): TimelineRow 
       return { key, status: 'working', label: 'Placing your order…' };
     case 'cancelling':
       return { key, status: 'working', label: 'Cancelling…' };
+    case 'checking':
+      return { key, status: 'working', label: 'Checking your order…' };
+    case 'unverified':
+      return { key, status: 'failed', label: "Couldn't check your order" };
+    case 'not_placed':
+      return { key, status: 'info', label: 'No order was placed' };
     case 'placed':
       return { key, status: 'done', label: `Order placed: ${card.order?.reference ?? ''}`.trim() };
     case 'cancelled':

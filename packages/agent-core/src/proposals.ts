@@ -2,9 +2,16 @@
 //
 //   awaiting_approval --approve--> placing --ok--> placed
 //          |                          |---------> refused   (definite business refusal)
-//          |                          |---------> awaiting_approval (uncertain or price changed)
+//          |                          |---------> awaiting_approval (price changed)
+//          |                          '---------> unconfirmed (outcome unknown)
 //          |--10 min--> expired
-//          |--cancel / superseded--> cancelled
+//          '--cancel / superseded--> cancelled
+//
+//   unconfirmed --any approve or check--> look up by checkoutSessionId first:
+//          found -> placed | none -> awaiting_approval (or expired) | lookup failed -> stays unconfirmed
+//
+// An unconfirmed proposal is never expired, cancelled or superseded on its
+// own: the order may exist, so only a successful lookup may settle it.
 //
 // The model can create a proposal (propose_order) but can never approve one.
 // approve() is reached only from the app's approval endpoint, after the
@@ -25,7 +32,7 @@ import {
 
 export const PROPOSAL_TTL_MS = 10 * 60 * 1000;
 
-export type ProposalState = 'awaiting_approval' | 'placing' | 'placed' | 'refused' | 'expired' | 'cancelled';
+export type ProposalState = 'awaiting_approval' | 'placing' | 'placed' | 'refused' | 'expired' | 'cancelled' | 'unconfirmed';
 
 export interface Proposal {
   id: string;
@@ -39,7 +46,7 @@ export interface Proposal {
   expiresAt: number;
   order?: PlacedOrder;
   refusal?: { code: RefusalCode; message: string };
-  /** Set after an uncertain outcome: the next attempt must look the order up first. */
+  /** Set after an uncertain outcome (state 'unconfirmed'): the next attempt must look the order up first. */
   outcomeUncertain: boolean;
 }
 
@@ -62,7 +69,18 @@ export type ApproveResult =
   | { status: 'placed'; order: PlacedOrder; alreadyPlaced: boolean }
   | { status: 'price_changed'; proposal: ProposalView; previousTotalNaira: number }
   | { status: 'refused'; code: RefusalCode; message: string }
-  | { status: 'uncertain'; message: string };
+  /** lookupFailed: the order may exist and we could not check; the customer should look in My Orders. */
+  | { status: 'uncertain'; message: string; lookupFailed?: boolean };
+
+/** A read-only lookup by checkoutSessionId. Places nothing. */
+export type CheckResult =
+  | { status: 'placed'; order: PlacedOrder }
+  | { status: 'not_placed' }
+  | { status: 'check_failed'; message: string };
+
+export const UNCERTAIN_MESSAGE = 'We could not confirm the order. Nothing is charged twice: tap Approve again to check and finish.';
+export const LOOKUP_FAILED_MESSAGE =
+  "We couldn't check whether your order went through. Please look in My Orders before trying again.";
 
 export interface ProposalStoreOptions {
   clock?: () => number;
@@ -134,6 +152,24 @@ export class ProposalStore {
     return true;
   }
 
+  /**
+   * Read-only: is there an order for this proposal? Works even for a proposal
+   * this store no longer holds (after a restart), because the proposal id is
+   * the order's checkoutSessionId and the lookup is scoped to the customer.
+   */
+  async check(ctx: CustomerContext, id: string): Promise<CheckResult> {
+    const p = this.get(ctx, id);
+    if (p?.state === 'placed' && p.order) return { status: 'placed', order: p.order };
+    const found = await this.#lookup(ctx, id);
+    if (found === 'failed') return { status: 'check_failed', message: LOOKUP_FAILED_MESSAGE };
+    if (found) {
+      if (p) this.#placed(p, found, true);
+      return { status: 'placed', order: found };
+    }
+    if (p?.state === 'unconfirmed') this.#settleNoOrder(p);
+    return { status: 'not_placed' };
+  }
+
   /** Called only by the approval endpoint. Concurrent calls for one proposal share one attempt. */
   approve(ctx: CustomerContext, id: string): Promise<ApproveResult> {
     const running = this.#inFlight.get(id);
@@ -145,10 +181,25 @@ export class ProposalStore {
 
   async #approve(ctx: CustomerContext, id: string): Promise<ApproveResult> {
     const p = this.get(ctx, id);
-    if (!p) return { status: 'refused', code: 'NOT_FOUND', message: 'This order proposal was not found.' };
+    if (!p) {
+      // Unknown here (e.g. after a restart), but an order may still exist for it.
+      const found = await this.#lookup(ctx, id);
+      if (found === 'failed') return { status: 'uncertain', lookupFailed: true, message: LOOKUP_FAILED_MESSAGE };
+      if (found) return { status: 'placed', order: found, alreadyPlaced: true };
+      return { status: 'refused', code: 'NOT_FOUND', message: 'This order proposal was not found.' };
+    }
     if (p.state === 'placed' && p.order) return { status: 'placed', order: p.order, alreadyPlaced: true };
     if (p.state === 'refused' && p.refusal) return { status: 'refused', ...p.refusal };
     if (p.state === 'cancelled') return { status: 'refused', code: 'CANCELLED', message: 'This proposal was cancelled.' };
+
+    // Unconfirmed: settle it by lookup before anything else, expiry included.
+    if (p.state === 'unconfirmed') {
+      const found = await this.#lookup(ctx, p.id);
+      if (found === 'failed') return { status: 'uncertain', lookupFailed: true, message: LOOKUP_FAILED_MESSAGE };
+      if (found) return this.#placed(p, found, true);
+      this.#settleNoOrder(p);
+    }
+
     if (p.state === 'expired' || this.#clock() > p.expiresAt) {
       p.state = 'expired';
       return { status: 'refused', code: 'EXPIRED', message: 'This proposal expired. Ask the assistant for a fresh quote.' };
@@ -156,12 +207,6 @@ export class ProposalStore {
 
     p.state = 'placing';
     try {
-      // After an uncertain outcome, the order may already exist: look first.
-      if (p.outcomeUncertain) {
-        const found = await this.port.findOrderByCheckoutSession(ctx, p.id);
-        if (found) return this.#placed(p, found, true);
-      }
-
       // Re-quote. A changed total refuses and asks again with the new quote.
       const fresh = await this.port.quoteOrder(ctx, p.cart);
       if (fresh.totalNaira !== p.quote.totalNaira) {
@@ -186,16 +231,28 @@ export class ProposalStore {
         return { status: 'refused', ...p.refusal };
       }
       // Uncertain: it may have been placed. Check by checkoutSessionId before anything else.
+      const found = await this.#lookup(ctx, p.id);
+      if (found && found !== 'failed') return this.#placed(p, found, false);
+      // Not found yet, or the lookup failed: the request may still land, so
+      // the proposal stays unconfirmed until a later lookup settles it.
+      p.state = 'unconfirmed';
       p.outcomeUncertain = true;
-      try {
-        const found = await this.port.findOrderByCheckoutSession(ctx, p.id);
-        if (found) return this.#placed(p, found, false);
-      } catch {
-        // Lookup failed too; stay retryable. The next attempt looks up first.
-      }
-      p.state = 'awaiting_approval';
-      return { status: 'uncertain', message: 'We could not confirm the order. Nothing is charged twice: tap Approve again to check and finish.' };
+      return { status: 'uncertain', message: UNCERTAIN_MESSAGE };
     }
+  }
+
+  async #lookup(ctx: CustomerContext, id: string): Promise<PlacedOrder | null | 'failed'> {
+    try {
+      return await this.port.findOrderByCheckoutSession(ctx, id);
+    } catch {
+      return 'failed';
+    }
+  }
+
+  /** A lookup confirmed there is no order: back to an ordinary proposal (which may then expire). */
+  #settleNoOrder(p: Proposal): void {
+    p.state = 'awaiting_approval';
+    p.outcomeUncertain = false;
   }
 
   #placed(p: Proposal, order: PlacedOrder, alreadyPlaced: boolean): ApproveResult {

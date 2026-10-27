@@ -20,6 +20,9 @@ const TITLES: Record<ApprovalStatus, string> = {
   cancelling: 'Cancelling…',
   cancelled: 'Cancelled',
   uncertain: 'Not confirmed yet',
+  checking: 'Checking your order…',
+  not_placed: 'No order was placed',
+  unverified: "Couldn't check your order",
   failed: 'Order not placed',
 };
 
@@ -39,7 +42,7 @@ export function ApprovalCard({ card, now, onApprove, onCancel, onAskAgain, onOpe
   const p = card.proposal;
   const message = statusMessage(card, now);
   const dimmed = status === 'superseded' || status === 'cancelled' || status === 'expired' || status === 'lost';
-  const accent = status === 'placed' ? colors.success : status === 'refused' || status === 'failed' ? colors.error : colors.primary;
+  const accent = status === 'placed' ? colors.success : status === 'refused' || status === 'failed' || status === 'unverified' ? colors.error : colors.primary;
 
   const row = (label: string, value: string, strong = false) => (
     <View style={styles.row}>
@@ -79,22 +82,27 @@ export function ApprovalCard({ card, now, onApprove, onCancel, onAskAgain, onOpe
       {card.previousTotalNaira !== undefined && status === 'price_changed' ? row('Was', naira(card.previousTotalNaira)) : null}
       {row('Total', naira(p.totalNaira), true)}
       <Text style={[styles.small, { fontFamily: fonts.regular, color: colors.greyMedium, marginTop: 4 }]}>
-        Paid from your Behtafood wallet.{actions.approve && status !== 'uncertain' ? ` Valid for ${minutesLeft(card, now)} min.` : ''}
+        Paid from your Behtafood wallet.{actions.cancel ? ` Valid for ${minutesLeft(card, now)} min.` : ''}
       </Text>
 
       {status === 'placed' && card.order ? (
-        <Text style={[styles.body, { fontFamily: fonts.semibold, color: colors.success, marginTop: 8 }]}>Reference: {card.order.reference}</Text>
+        <Text style={[styles.body, { fontFamily: fonts.semibold, color: colors.success, marginTop: 8 }]}>Your order was placed: {card.order.reference}</Text>
       ) : null}
-      {message ? (
+      {message && status !== 'placed' ? (
         <Text style={[styles.body, { fontFamily: fonts.regular, color: status === 'refused' || status === 'failed' ? colors.error : colors.greyDark, marginTop: 8 }]}>
           {message}
         </Text>
       ) : null}
 
       <View style={styles.buttons}>
-        {status === 'approving' || status === 'cancelling' ? <ActivityIndicator color={colors.primary} /> : null}
+        {status === 'approving' || status === 'cancelling' || status === 'checking' ? <ActivityIndicator color={colors.primary} /> : null}
         {actions.cancel ? <Button label="Cancel" kind="secondary" onPress={onCancel} /> : null}
-        {actions.approve ? <Button label={status === 'uncertain' ? 'Check and approve' : `Approve ${naira(p.totalNaira)}`} onPress={onApprove} /> : null}
+        {actions.approve ? (
+          <Button
+            label={status === 'unverified' ? 'Check again' : status === 'uncertain' ? 'Check and approve' : `Approve ${naira(p.totalNaira)}`}
+            onPress={onApprove}
+          />
+        ) : null}
         {actions.askAgain ? <Button label="Ask again" kind="secondary" onPress={onAskAgain} /> : null}
         {actions.openOrder && card.order && onOpenOrder ? <Button label="View order" onPress={() => onOpenOrder(card.order!.orderId)} /> : null}
       </View>

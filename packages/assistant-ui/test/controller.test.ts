@@ -4,7 +4,7 @@ import { beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AssistantController } from '../src/logic/controller';
 import { AgentApiError, createAgentClient, type AgentClient } from '../src/logic/client';
-import type { ApproveResult, StoredEvent } from '../src/logic/types';
+import type { ApproveResult, CheckResult, StoredEvent } from '../src/logic/types';
 import { NOW, PLACED, ev, happyRun, proposal, resetSeq } from './fixtures';
 
 class FakeClient implements AgentClient {
@@ -12,6 +12,8 @@ class FakeClient implements AgentClient {
   polls: { runId: string; after: number }[] = [];
   approves: string[] = [];
   cancels: string[] = [];
+  checks: string[] = [];
+  checkResults: (CheckResult | AgentApiError)[] = [];
   /** Each poll returns the next batch; `finished` once the batches run out. */
   batches: (StoredEvent[] | AgentApiError)[] = [];
   approveResults: (ApproveResult | AgentApiError)[] = [];
@@ -21,6 +23,7 @@ class FakeClient implements AgentClient {
   async chat(text: string, sessionId?: string) {
     this.chats.push({ text, sessionId });
     if (this.chatError) throw this.chatError;
+    this.all = []; // each run has its own events, as on the server
     return { runId: `run_${this.chats.length}`, sessionId: null };
   }
   async events(runId: string, after: number) {
@@ -40,6 +43,12 @@ class FakeClient implements AgentClient {
   async cancel(id: string) {
     this.cancels.push(id);
     return { cancelled: true };
+  }
+  async check(id: string) {
+    this.checks.push(id);
+    const r = this.checkResults.shift() ?? { status: 'not_placed' as const };
+    if (r instanceof AgentApiError) throw r;
+    return r;
   }
 }
 
@@ -121,6 +130,64 @@ describe('AssistantController', () => {
     const card = c.getState().cards.prop_1!;
     assert.equal(card.status, 'lost');
     assert.match(card.message ?? '', /ask/i);
+  });
+
+  describe('T5c: Ask again looks the order up first', () => {
+    async function unconfirmed() {
+      const t = setup();
+      t.client.batches = [happyRun()];
+      await t.c.send('order');
+      t.client.approveResults = [{ status: 'uncertain', message: 'We could not confirm the order.' }];
+      await t.c.approve('prop_1');
+      assert.equal(t.c.getState().cards.prop_1!.status, 'uncertain');
+      t.advance(60 * 60_000); // long after the 10-minute quote window
+      return t;
+    }
+
+    test('the order exists: the card shows it placed, and no new message is sent', async () => {
+      const { client, c } = await unconfirmed();
+      const chats = client.chats.length;
+      client.checkResults = [{ status: 'placed', order: (PLACED as any).order }];
+      await c.askAgain('prop_1');
+      assert.deepEqual(client.checks, ['prop_1']);
+      assert.equal(client.chats.length, chats);
+      const card = c.getState().cards.prop_1!;
+      assert.equal(card.status, 'placed');
+      assert.equal(card.message, 'Your order was placed: ORD-ABC-123');
+    });
+
+    test('no order: only then is a fresh quote requested', async () => {
+      const { client, c } = await unconfirmed();
+      client.checkResults = [{ status: 'not_placed' }];
+      client.batches = [[ev({ type: 'reply', text: 'ok' }), ev({ type: 'done', modelCalls: 1, costUsd: 0 })]];
+      await c.askAgain('prop_1');
+      assert.match(client.chats.at(-1)!.text, /fresh quote/);
+      assert.equal(c.getState().cards.prop_1!.status, 'not_placed');
+    });
+
+    test('the check fails (server or network): nothing is sent and the card points to My Orders', async () => {
+      for (const failure of [{ status: 'check_failed' as const, message: "We couldn't check. Please look in My Orders before trying again." }, new AgentApiError('network', 'offline')]) {
+        const { client, c } = await unconfirmed();
+        const chats = client.chats.length;
+        client.checkResults = [failure];
+        await c.askAgain('prop_1');
+        assert.equal(client.chats.length, chats);
+        const card = c.getState().cards.prop_1!;
+        assert.equal(card.status, 'unverified');
+        assert.match(card.message ?? '', /My Orders/);
+      }
+    });
+
+    test('an expired or lost card is checked too, so a restart can never lead to a second order', async () => {
+      const { client, c, advance } = setup();
+      client.batches = [happyRun()];
+      await c.send('order');
+      advance(11 * 60_000);
+      client.checkResults = [{ status: 'placed', order: (PLACED as any).order }];
+      await c.askAgain('prop_1');
+      assert.equal(c.getState().cards.prop_1!.status, 'placed');
+      assert.equal(client.chats.length, 1);
+    });
   });
 
   test('cancel calls the server and marks the card', async () => {
@@ -206,10 +273,12 @@ describe('createAgentClient', () => {
     assert.deepEqual(await client.chat('hi', 'ses_1'), { runId: 'run_1', sessionId: 'ses_1' });
     await client.events('run_1', 3);
     await client.approve('prop_1');
+    await client.check('prop_1');
     assert.deepEqual(calls.map((c) => c.url), [
       'http://10.0.0.2:7001/api/agent/chat',
       'http://10.0.0.2:7001/api/agent/runs/run_1/events?after=3',
       'http://10.0.0.2:7001/api/agent/approve',
+      'http://10.0.0.2:7001/api/agent/check',
     ]);
     for (const c of calls) assert.equal((c.init.headers as Record<string, string>).Authorization, 'Bearer tok');
     assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { text: 'hi', sessionId: 'ses_1' });

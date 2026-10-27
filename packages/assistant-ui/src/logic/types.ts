@@ -54,7 +54,14 @@ export type ApproveResult =
   | { status: 'placed'; order: PlacedOrder; alreadyPlaced: boolean }
   | { status: 'price_changed'; proposal: ProposalView; previousTotalNaira: number }
   | { status: 'refused'; code: RefusalCode; message: string }
-  | { status: 'uncertain'; message: string };
+  /** lookupFailed: the server could not check whether the order exists. */
+  | { status: 'uncertain'; message: string; lookupFailed?: boolean };
+
+/** POST /agent/check: a read-only lookup of the order by the proposal id. */
+export type CheckResult =
+  | { status: 'placed'; order: PlacedOrder }
+  | { status: 'not_placed' }
+  | { status: 'check_failed'; message: string };
 
 /** One timeline event, as emitted by the agent and stored by the server. */
 export type AgentEvent =

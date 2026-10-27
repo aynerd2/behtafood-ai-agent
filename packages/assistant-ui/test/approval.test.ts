@@ -9,6 +9,9 @@ import {
   cancelResolved,
   cancelStarted,
   cardActions,
+  checkFailed,
+  checkResolved,
+  checkStarted,
   effectiveStatus,
   minutesLeft,
   newCard,
@@ -97,6 +100,45 @@ describe('approval card', () => {
   test('cancel: cancelled when the server agrees, lost when it no longer knows the card', () => {
     assert.equal(cancelResolved(cancelStarted(newCard(proposal())), true).status, 'cancelled');
     assert.equal(cancelResolved(cancelStarted(newCard(proposal())), false).status, 'lost');
+  });
+
+  test('T5c: a not-confirmed card never expires on its own; it offers Approve (server checks first) and Ask again (app checks first), not Cancel', () => {
+    const u = approveResolved(approveStarted(newCard(proposal())), { status: 'uncertain', message: 'We could not confirm the order.' });
+    const later = NOW + 60 * 60_000;
+    assert.equal(effectiveStatus(u, later), 'uncertain');
+    assert.deepEqual(cardActions(u, later), { approve: true, cancel: false, askAgain: true, openOrder: false });
+  });
+
+  test('T5c: when the server could not check, the card says so, points to My Orders, and offers only Check again', () => {
+    const c = approveResolved(approveStarted(newCard(proposal())), {
+      status: 'uncertain',
+      lookupFailed: true,
+      message: "We couldn't check whether your order went through. Please look in My Orders before trying again.",
+    });
+    assert.equal(c.status, 'unverified');
+    assert.match(c.message ?? '', /My Orders/);
+    assert.deepEqual(cardActions(c, NOW + 60 * 60_000), { approve: true, cancel: false, askAgain: false, openOrder: false });
+  });
+
+  test('T5c: a check that finds the order shows "Your order was placed: <reference>" with View order', () => {
+    const u = approveResolved(approveStarted(newCard(proposal())), { status: 'uncertain', message: 'x' });
+    const c = checkResolved(checkStarted(u), { status: 'placed', order: (PLACED as any).order });
+    assert.equal(c.status, 'placed');
+    assert.equal(c.message, 'Your order was placed: ORD-ABC-123');
+    assert.deepEqual(cardActions(c, NOW), { approve: false, cancel: false, askAgain: false, openOrder: true });
+  });
+
+  test('T5c: a check that confirms no order allows asking again; a failed check does not', () => {
+    const u = approveResolved(approveStarted(newCard(proposal())), { status: 'uncertain', message: 'x' });
+    const none = checkResolved(checkStarted(u), { status: 'not_placed' });
+    assert.equal(none.status, 'not_placed');
+    assert.equal(cardActions(none, NOW).askAgain, true);
+    const failed = checkResolved(checkStarted(u), { status: 'check_failed', message: "We couldn't check. Please look in My Orders before trying again." });
+    assert.equal(failed.status, 'unverified');
+    assert.equal(cardActions(failed, NOW).askAgain, false);
+    const offline = checkFailed(checkStarted(u), new AgentApiError('network', 'offline'));
+    assert.equal(offline.status, 'unverified');
+    assert.match(offline.message ?? '', /My Orders/);
   });
 
   test('a placed card ignores a late duplicate result', () => {

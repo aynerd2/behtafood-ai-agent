@@ -8,14 +8,19 @@
 //      |                      |------> price_changed (new total; approve again)
 //      |                      |------> refused   (reason shown; ask again)
 //      |                      |------> expired / lost (ask again)
-//      |                      '------> uncertain (tap Approve again: safe)
+//      |                      '------> uncertain (not confirmed)
 //      |--Cancel--> cancelling --> cancelled
 //      |--time passes--> expired (locally, without a tap)
 //      '--newer card--> superseded
+//
+// Not confirmed (uncertain) means the order may exist. Such a card never
+// expires or gets replaced on its own. Approve lets the server look it up
+// first; Ask again looks it up here first (checking -> placed / not_placed /
+// unverified), and a fresh quote is requested only when there is no order.
 
 import { AgentApiError } from './client';
 import { naira } from './format';
-import type { ApproveResult, PlacedOrder, ProposalView } from './types';
+import type { ApproveResult, CheckResult, PlacedOrder, ProposalView } from './types';
 
 export type ApprovalStatus =
   | 'awaiting'
@@ -29,6 +34,9 @@ export type ApprovalStatus =
   | 'cancelling'
   | 'cancelled'
   | 'uncertain'
+  | 'checking'
+  | 'not_placed'
+  | 'unverified'
   | 'failed';
 
 export interface ApprovalCardState {
@@ -50,6 +58,12 @@ export interface CardActions {
 const EXPIRED_TEXT = 'This quote expired. Ask the assistant for a fresh one.';
 const LOST_TEXT = 'This quote is no longer available. Ask the assistant again for a fresh one.';
 const UNCERTAIN_TEXT = 'We could not confirm the order. Nothing is charged twice: tap Approve again to check.';
+const COULD_NOT_CHECK_TEXT = "We couldn't check whether your order went through. Please look in My Orders before trying again.";
+const NOT_PLACED_TEXT = 'No order was placed. Asking the assistant for a fresh quote.';
+
+export function placedMessage(order: PlacedOrder): string {
+  return `Your order was placed: ${order.reference}`;
+}
 
 export function newCard(proposal: ProposalView): ApprovalCardState {
   return { proposal, status: 'awaiting' };
@@ -64,9 +78,11 @@ export function effectiveStatus(card: ApprovalCardState, now: number): ApprovalS
 export function cardActions(card: ApprovalCardState, now: number): CardActions {
   const s = effectiveStatus(card, now);
   return {
-    approve: s === 'awaiting' || s === 'price_changed' || s === 'uncertain',
+    // For uncertain/unverified, Approve makes the server look the order up first.
+    approve: s === 'awaiting' || s === 'price_changed' || s === 'uncertain' || s === 'unverified',
     cancel: s === 'awaiting' || s === 'price_changed',
-    askAgain: s === 'expired' || s === 'lost' || s === 'refused',
+    // Ask again always checks for an order first (see the controller).
+    askAgain: s === 'expired' || s === 'lost' || s === 'refused' || s === 'uncertain' || s === 'not_placed',
     openOrder: s === 'placed',
   };
 }
@@ -89,7 +105,7 @@ export function approveResolved(card: ApprovalCardState, result: ApproveResult):
   if (card.status === 'placed') return card; // a late duplicate answer changes nothing
   switch (result.status) {
     case 'placed':
-      return { ...card, status: 'placed', order: result.order, message: undefined };
+      return { ...card, status: 'placed', order: result.order, message: placedMessage(result.order) };
     case 'price_changed':
       return {
         ...card,
@@ -103,8 +119,29 @@ export function approveResolved(card: ApprovalCardState, result: ApproveResult):
       if (result.code === 'NOT_FOUND' || result.code === 'CANCELLED') return { ...card, status: 'lost', message: LOST_TEXT };
       return { ...card, status: 'refused', message: result.message };
     case 'uncertain':
+      if (result.lookupFailed) return { ...card, status: 'unverified', message: result.message || COULD_NOT_CHECK_TEXT };
       return { ...card, status: 'uncertain', message: result.message || UNCERTAIN_TEXT };
   }
+}
+
+export function checkStarted(card: ApprovalCardState): ApprovalCardState {
+  return { ...card, status: 'checking', message: undefined };
+}
+
+export function checkResolved(card: ApprovalCardState, result: CheckResult): ApprovalCardState {
+  switch (result.status) {
+    case 'placed':
+      return { ...card, status: 'placed', order: result.order, message: placedMessage(result.order) };
+    case 'not_placed':
+      return { ...card, status: 'not_placed', message: NOT_PLACED_TEXT };
+    case 'check_failed':
+      return { ...card, status: 'unverified', message: result.message || COULD_NOT_CHECK_TEXT };
+  }
+}
+
+/** The check request itself failed: we do not know, so nothing is re-sent. */
+export function checkFailed(card: ApprovalCardState, _err: unknown): ApprovalCardState {
+  return { ...card, status: 'unverified', message: COULD_NOT_CHECK_TEXT };
 }
 
 export function approveFailed(card: ApprovalCardState, err: unknown): ApprovalCardState {

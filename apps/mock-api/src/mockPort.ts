@@ -18,7 +18,7 @@ import {
   type RestaurantSummary,
 } from '@behtafood-agent/agent-core';
 import { seedCustomers, seedMenu, seedRestaurants, type MockCustomer, type MockMenuItem, type MockRestaurant } from './data';
-
+// ---- mock data types ----
 interface MockOrder extends PlacedOrder {
   customerId: string;
   lines: { itemId: string; name: string; quantity: number; choices?: { group: string; option: string }[] }[];
@@ -49,6 +49,8 @@ export class MockBehtafoodPort implements BehtafoodPort {
   /** Counts real order creations, for the no-duplicate tests. */
   placeOrderCalls = 0;
   nextPlaceOrderFault: PlaceOrderFault | null = null;
+  /** Test hook: this many next findOrderByCheckoutSession calls throw (lookup outage). */
+  failLookups = 0;
   #seq = 0;
 
   constructor(readonly clock: () => number = Date.now) {}
@@ -215,6 +217,10 @@ export class MockBehtafoodPort implements BehtafoodPort {
   }
 
   async findOrderByCheckoutSession(ctx: CustomerContext, checkoutSessionId: string): Promise<PlacedOrder | null> {
+    if (this.failLookups > 0) {
+      this.failLookups -= 1;
+      throw new Error('lookup timed out');
+    }
     const o = this.orders.find((x) => x.customerId === ctx.customerId && x.checkoutSessionId === checkoutSessionId);
     return o ? this.#placed(o) : null;
   }

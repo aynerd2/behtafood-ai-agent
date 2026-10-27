@@ -10,6 +10,9 @@ import {
   cancelResolved,
   cancelStarted,
   cardActions,
+  checkFailed,
+  checkResolved,
+  checkStarted,
   type ApprovalCardState,
 } from './approval';
 import { AgentApiError, type AgentClient } from './client';
@@ -166,10 +169,23 @@ export class AssistantController {
     }
   }
 
-  /** Expired, lost or refused card: ask the assistant for a fresh quote. */
+  /**
+   * Ask for a fresh quote, but only once a lookup confirms this card has no
+   * order. Checked for every card (not just "not confirmed" ones): a server
+   * restart can turn an unconfirmed card into a "lost" one.
+   */
   async askAgain(proposalId: string): Promise<void> {
     const card = this.#state.cards[proposalId];
-    if (!card || !cardActions(card, this.#now()).askAgain) return;
+    if (!card || this.#state.busy || !cardActions(card, this.#now()).askAgain) return;
+    this.#setCard(proposalId, checkStarted);
+    try {
+      const r = await this.#client.check(proposalId);
+      this.#setCard(proposalId, (c) => checkResolved(c, r));
+      if (r.status !== 'not_placed') return;
+    } catch (err) {
+      this.#setCard(proposalId, (c) => checkFailed(c, err));
+      return;
+    }
     await this.send(askAgainMessage(card.proposal));
   }
 

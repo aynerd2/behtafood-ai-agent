@@ -1,6 +1,7 @@
 // HTTP server for the agent against the mock backend. Same routes the private
 // backend will expose: /api/agent/chat (server-sent events), /api/agent/approve,
-// /api/agent/cancel, /api/agent/usage. All of them 404 unless the agent is enabled.
+// /api/agent/check, /api/agent/cancel, /api/agent/usage. All of them 404 unless
+// the agent is enabled.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Agent, type ModelClient, type OrderStatus, type TimelineEvent } from '@behtafood-agent/agent-core';
@@ -89,6 +90,13 @@ export function createMockServer(opts: MockServerOptions) {
         const body = await readJson(req);
         if (typeof body.proposalId !== 'string') throw new HttpError(400, 'proposalId is required');
         return sendJson(res, 200, await agent.proposals.approve(ctx, body.proposalId));
+      }
+
+      // Read-only: is there an order for this proposal? Asked before "Ask again".
+      if (req.method === 'POST' && url.pathname === '/api/agent/check') {
+        const body = await readJson(req);
+        if (typeof body.proposalId !== 'string') throw new HttpError(400, 'proposalId is required');
+        return sendJson(res, 200, await agent.proposals.check(ctx, body.proposalId));
       }
 
       if (req.method === 'POST' && url.pathname === '/api/agent/cancel') {
