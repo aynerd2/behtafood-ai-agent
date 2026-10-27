@@ -1,0 +1,10 @@
+{
+  "name": "@behtafood-agent/agent-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent loop, tool schemas, proposal and approval state machine, usage meter and the BehtafoodPort contract.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

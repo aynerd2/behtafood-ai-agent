@@ -1,0 +1,7 @@
+{
+  "name": "@behtafood-agent/mock-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Fake-data implementation of BehtafoodPort, an HTTP server for /api/agent/*, and a terminal chat. Uses @behtafood-agent/agent-core, linked by the root workspace."
+}

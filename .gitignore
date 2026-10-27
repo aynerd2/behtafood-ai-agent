@@ -1,0 +1,19 @@
+# dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# secrets and local config: the Meta key is read from the environment only
+.env
+.env.*
+!.env.example
+
+# logs and tool artifacts: never publish these
+*.log
+logs/
+.claude/
+*.jsonl
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
