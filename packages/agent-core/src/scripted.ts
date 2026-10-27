@@ -9,10 +9,17 @@ import { ZERO_USAGE } from './usage';
 
 const FOOD_WORDS = ['rice', 'jollof', 'fried', 'chicken', 'turkey', 'beef', 'shawarma', 'amala', 'ewedu', 'yam', 'egusi', 'chops', 'zobo', 'plantain', 'suya', 'beans', 'soup', 'snacks', 'drink'];
 
+interface MenuResultItem {
+  id: string;
+  name: string;
+  price_naira: number;
+  choices?: { group: string; required: boolean; options: { name: string; extra_price_naira: number }[] }[];
+}
+
 interface Option {
   restaurantId: string;
   restaurantName: string;
-  items: { id: string; name: string; price: number }[];
+  items: { id: string; name: string; price: number; choices: { group: string; option: string }[] }[];
   food: number;
   fee: number;
   total: number;
@@ -75,7 +82,18 @@ function computeOptions(messages: ChatMessage[]): { options: Option[]; budget?: 
   for (const menu of results.slice(searchIdx + 1).filter((r) => r.name === 'get_menu' && Array.isArray(r.result.items))) {
     const r = restaurants.find((x) => x.id === menu.result.restaurant_id);
     if (!r) continue;
-    const items = (menu.result.items as { id: string; name: string; price_naira: number }[]).map((i) => ({ id: i.id, name: i.name, price: i.price_naira }));
+    // A required choice is offered as its first option, named in the option
+    // text, so the choice is the customer's when they pick that option.
+    const items = (menu.result.items as MenuResultItem[]).map((i) => {
+      const choices = (i.choices ?? []).filter((g) => g.required && g.options.length).map((g) => ({ group: g.group, option: g.options[0]!.name, extra: g.options[0]!.extra_price_naira }));
+      const label = choices.length ? ` (${choices.map((c) => `${c.group}: ${c.option}`).join(', ')})` : '';
+      return {
+        id: i.id,
+        name: `${i.name}${label}`,
+        price: i.price_naira + choices.reduce((s, c) => s + c.extra, 0),
+        choices: choices.map(({ group, option }) => ({ group, option })),
+      };
+    });
     const combos: (typeof items)[] = [...items.map((i) => [i]), ...items.flatMap((a, i) => items.slice(i + 1).map((b) => [a, b]))];
     for (const c of combos) {
       const food = c.reduce((s, i) => s + i.price, 0);
@@ -113,7 +131,7 @@ export class ScriptedDemoModel implements ModelClient {
       const { options } = computeOptions(messages.slice(0, lastUser));
       const chosen = pick !== undefined ? options[pick - 1] : undefined;
       if (chosen) {
-        return { content: null, tool_calls: [call('build_cart', { restaurant_id: chosen.restaurantId, items: chosen.items.map((i) => ({ item_id: i.id, quantity: 1 })) })] };
+        return { content: null, tool_calls: [call('build_cart', { restaurant_id: chosen.restaurantId, items: chosen.items.map((i) => ({ item_id: i.id, quantity: 1, ...(i.choices.length ? { choices: i.choices } : {}) })) })] };
       }
       if (/last time|same (thing|order)|again/i.test(userText)) return { content: null, tool_calls: [call('get_my_recent_orders', {})] };
       const words = FOOD_WORDS.filter((w) => userText.toLowerCase().includes(w));

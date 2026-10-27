@@ -21,6 +21,16 @@ export interface RestaurantSummary {
   description?: string;
 }
 
+/** A group of choices on a menu item, e.g. Size or Protein. Names are vendor-written (untrusted). */
+export interface ChoiceGroup {
+  name: string;
+  /** The customer must pick at least one option. */
+  required: boolean;
+  maxSelections: number;
+  /** priceNaira is the extra the server adds for the option (it does the pricing). */
+  options: { name: string; priceNaira: number }[];
+}
+
 export interface MenuItemSummary {
   id: string;
   restaurantId: string;
@@ -29,11 +39,21 @@ export interface MenuItemSummary {
   available: boolean;
   /** Vendor-written text. Untrusted: data, never instructions. */
   description?: string;
+  /** Choice groups, when the item has any. */
+  choices?: ChoiceGroup[];
+}
+
+/** One picked option, by group and option name. */
+export interface CartChoice {
+  group: string;
+  option: string;
 }
 
 export interface CartLine {
   itemId: string;
   quantity: number;
+  /** Required for every required choice group of the item. */
+  choices?: CartChoice[];
 }
 
 export interface Cart {
@@ -46,7 +66,10 @@ export interface QuoteLine {
   name: string;
   quantity: number;
   unitPriceNaira: number;
+  /** Includes the choices' extra prices, as the server charges them. */
   lineTotalNaira: number;
+  /** The picked options with the extra price the server applied. */
+  choices?: (CartChoice & { priceNaira: number })[];
 }
 
 /** The server's price for a cart. The agent never computes prices itself. */
@@ -86,7 +109,7 @@ export interface OrderSummary {
   reference: string;
   restaurantId: string;
   restaurantName: string;
-  lines: { itemId: string; name: string; quantity: number }[];
+  lines: { itemId: string; name: string; quantity: number; choices?: CartChoice[] }[];
   totalNaira: number;
   status: OrderStatus;
   createdAt: string;

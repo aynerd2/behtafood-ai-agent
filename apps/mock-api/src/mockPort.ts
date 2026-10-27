@@ -21,7 +21,7 @@ import { seedCustomers, seedMenu, seedRestaurants, type MockCustomer, type MockM
 
 interface MockOrder extends PlacedOrder {
   customerId: string;
-  lines: { itemId: string; name: string; quantity: number }[];
+  lines: { itemId: string; name: string; quantity: number; choices?: { group: string; option: string }[] }[];
   updatedAt: string;
   riderAssigned: boolean;
 }
@@ -107,7 +107,15 @@ export class MockBehtafoodPort implements BehtafoodPort {
     if (!r) throw new PortError('NOT_FOUND', 'Restaurant not found');
     return this.menu
       .filter((m) => m.restaurantId === restaurantId)
-      .map((m) => ({ id: m.id, restaurantId: m.restaurantId, name: m.name, priceNaira: m.priceNaira, available: m.available, description: m.description }));
+      .map((m) => ({
+        id: m.id,
+        restaurantId: m.restaurantId,
+        name: m.name,
+        priceNaira: m.priceNaira,
+        available: m.available,
+        description: m.description,
+        ...(m.choices ? { choices: structuredClone(m.choices) } : {}),
+      }));
   }
 
   async getRecentOrders(ctx: CustomerContext, limit: number): Promise<OrderSummary[]> {
@@ -137,7 +145,17 @@ export class MockBehtafoodPort implements BehtafoodPort {
       if (!m) throw new PortError('INVALID_CART', `Item ${l.itemId} is not on this menu`);
       if (!m.available) throw new PortError('ITEM_UNAVAILABLE', `${m.name} is not available right now`);
       if (!Number.isInteger(l.quantity) || l.quantity < 1 || l.quantity > 20) throw new PortError('INVALID_CART', 'Invalid quantity');
-      return { itemId: m.id, name: m.name, quantity: l.quantity, unitPriceNaira: m.priceNaira, lineTotalNaira: m.priceNaira * l.quantity };
+      const choices = this.#priceChoices(m, l.choices ?? []);
+      // Like Behtafood: a choice's extra price is added once per line, not per unit.
+      const extras = choices.reduce((s, c) => s + c.priceNaira, 0);
+      return {
+        itemId: m.id,
+        name: m.name,
+        quantity: l.quantity,
+        unitPriceNaira: m.priceNaira,
+        lineTotalNaira: m.priceNaira * l.quantity + extras,
+        ...(choices.length ? { choices } : {}),
+      };
     });
     const subtotal = lines.reduce((s, l) => s + l.lineTotalNaira, 0);
     return {
@@ -181,7 +199,12 @@ export class MockBehtafoodPort implements BehtafoodPort {
       createdAt: now,
       updatedAt: now,
       riderAssigned: false,
-      lines: quote.lines.map((l) => ({ itemId: l.itemId, name: l.name, quantity: l.quantity })),
+      lines: quote.lines.map((l) => ({
+        itemId: l.itemId,
+        name: l.name,
+        quantity: l.quantity,
+        ...(l.choices ? { choices: l.choices.map(({ group, option }) => ({ group, option })) } : {}),
+      })),
     };
     this.orders.push(order);
     if (this.nextPlaceOrderFault === 'lost_response') {
@@ -208,6 +231,23 @@ export class MockBehtafoodPort implements BehtafoodPort {
   }
 
   // ---- internals ----
+
+  /** Server-side check of a line's picks against the stored groups, priced from the menu. */
+  #priceChoices(m: MockMenuItem, picks: { group: string; option: string }[]) {
+    const out: { group: string; option: string; priceNaira: number }[] = [];
+    for (const p of picks) {
+      const g = m.choices?.find((x) => x.name === p.group);
+      const o = g?.options.find((x) => x.name === p.option);
+      if (!g || !o) throw new PortError('INVALID_CART', `Invalid choice "${p.option}" for ${m.name}`);
+      out.push({ group: g.name, option: o.name, priceNaira: o.priceNaira });
+    }
+    for (const g of m.choices ?? []) {
+      const n = out.filter((c) => c.group === g.name).length;
+      if (g.required && n === 0) throw new PortError('INVALID_CART', `${m.name} needs a ${g.name} choice`);
+      if (n > g.maxSelections) throw new PortError('INVALID_CART', `Too many ${g.name} choices for ${m.name}`);
+    }
+    return out;
+  }
 
   #isOpen(r: MockRestaurant): boolean {
     return r.isOpen && !r.adminForceClosed;

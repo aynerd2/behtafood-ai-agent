@@ -12,6 +12,8 @@ export interface MockRestaurant {
   description?: string;
 }
 
+import type { ChoiceGroup } from '@behtafood-agent/agent-core';
+
 export interface MockMenuItem {
   id: string;
   restaurantId: string;
@@ -19,6 +21,8 @@ export interface MockMenuItem {
   priceNaira: number;
   available: boolean;
   description?: string;
+  /** Size, protein and similar picks. A required group must be chosen. */
+  choices?: ChoiceGroup[];
 }
 
 export interface MockCustomer {
@@ -58,7 +62,14 @@ export function seedMenu(): MockMenuItem[] {
     { id: 'itm_amala', restaurantId: 'rst_bisi', name: 'Amala and ewedu with gbegiri', priceNaira: 2000, available: true },
     { id: 'itm_iyan', restaurantId: 'rst_bisi', name: 'Pounded yam and egusi soup', priceNaira: 2600, available: true },
     { id: 'itm_beef', restaurantId: 'rst_bisi', name: 'Extra beef', priceNaira: 600, available: true },
-    { id: 'itm_shawarma', restaurantId: 'rst_wrap', name: 'Chicken shawarma', priceNaira: 3000, available: true },
+    {
+      id: 'itm_shawarma',
+      restaurantId: 'rst_wrap',
+      name: 'Chicken shawarma',
+      priceNaira: 3000,
+      available: true,
+      choices: [{ name: 'Size', required: true, maxSelections: 1, options: [{ name: 'Regular', priceNaira: 0 }, { name: 'Jumbo', priceNaira: 1000 }] }],
+    },
     { id: 'itm_chops', restaurantId: 'rst_wrap', name: 'Small chops (10 pieces)', priceNaira: 1500, available: true },
     { id: 'itm_zobo', restaurantId: 'rst_wrap', name: 'Zobo drink', priceNaira: 500, available: true },
     { id: 'itm_suya', restaurantId: 'rst_grill', name: 'Chicken suya', priceNaira: 2000, available: true },

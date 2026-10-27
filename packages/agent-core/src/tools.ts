@@ -4,7 +4,7 @@
 // places, pays for or approves an order.
 
 import type { ToolSchema } from './model';
-import { PortError, type BehtafoodPort, type Cart, type CustomerContext, type NudgeParty, type Quote } from './port';
+import { PortError, type BehtafoodPort, type Cart, type CartChoice, type CustomerContext, type MenuItemSummary, type NudgeParty, type Quote } from './port';
 import type { NudgeService } from './nudges';
 import type { ProposalStore, ProposalView } from './proposals';
 
@@ -32,14 +32,27 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   fn('get_my_recent_orders', "Get the customer's last 3 orders.", {}),
   fn(
     'build_cart',
-    'Build a cart at one restaurant, only after the customer has picked.',
+    "Build a cart at one restaurant, only after the customer has picked. For an item with required choices (e.g. Size or Protein), pass the customer's pick in choices; ask them first if they have not said.",
     {
       restaurant_id: { type: 'string' },
       items: {
         type: 'array',
         items: {
           type: 'object',
-          properties: { item_id: { type: 'string' }, quantity: { type: 'integer' } },
+          properties: {
+            item_id: { type: 'string' },
+            quantity: { type: 'integer' },
+            choices: {
+              type: 'array',
+              description: 'The picked option for each choice group, by name, exactly as get_menu listed them',
+              items: {
+                type: 'object',
+                properties: { group: { type: 'string' }, option: { type: 'string' } },
+                required: ['group', 'option'],
+                additionalProperties: false,
+              },
+            },
+          },
           required: ['item_id', 'quantity'],
           additionalProperties: false,
         },
@@ -126,8 +139,76 @@ function optInt(args: Record<string, unknown>, key: string, min: number, max: nu
 const clip = (s: string | undefined) => (s ? s.slice(0, MAX_DESCRIPTION) : undefined);
 const naira = (n: number) => `₦${n.toLocaleString('en-NG')}`;
 
-function fail(label: string, error: string, message: string): ToolOutcome {
-  return { ok: false, label, result: { error, message } };
+/** Choice groups as the model sees them. Omitted for items without any. */
+function choicesForModel(m: MenuItemSummary) {
+  if (!m.choices?.length) return {};
+  return {
+    choices: m.choices.map((g) => ({
+      group: g.name,
+      required: g.required,
+      max: g.maxSelections,
+      options: g.options.map((o) => ({ name: o.name, extra_price_naira: o.priceNaira })),
+    })),
+  };
+}
+
+function parseChoices(raw: unknown): CartChoice[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw) || raw.length > 10) throw new ArgError('choices must be a list of up to 10 { group, option }');
+  return raw.map((c) => {
+    const o = (c ?? {}) as Record<string, unknown>;
+    return { group: str(o, 'group'), option: str(o, 'option') };
+  });
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** For the app: the choice the customer still has to make, so it can show it as buttons. */
+interface PendingChoice {
+  itemId: string;
+  itemName: string;
+  group: string;
+  options: { name: string; extra_price_naira: number }[];
+}
+
+type ChoiceCheck =
+  | { ok: true; choices: CartChoice[] }
+  | { ok: false; error: 'NEEDS_CHOICE' | 'INVALID_CHOICE'; message: string; pending?: PendingChoice };
+
+/**
+ * Checks picks against the item's own groups and returns them in the menu's
+ * exact spelling, or a refusal the model can act on (ask the customer). The
+ * server checks again when it quotes; this only catches it early.
+ */
+function checkChoices(m: MenuItemSummary, picks: CartChoice[] = []): ChoiceCheck {
+  const groups = m.choices ?? [];
+  const out: CartChoice[] = [];
+  for (const p of picks) {
+    const g = groups.find((x) => sameName(x.name, p.group));
+    if (!g) return { ok: false, error: 'INVALID_CHOICE', message: `${m.name} has no choice group "${p.group}".` };
+    const o = g.options.find((x) => sameName(x.name, p.option));
+    if (!o) return { ok: false, error: 'INVALID_CHOICE', message: `"${p.option}" is not an option for ${g.name} on ${m.name}. Options: ${g.options.map((x) => x.name).join(', ')}.` };
+    if (out.some((c) => c.group === g.name && c.option === o.name)) return { ok: false, error: 'INVALID_CHOICE', message: `${o.name} is listed twice for ${g.name}.` };
+    out.push({ group: g.name, option: o.name });
+  }
+  for (const g of groups) {
+    const n = out.filter((c) => c.group === g.name).length;
+    if (n > g.maxSelections) return { ok: false, error: 'INVALID_CHOICE', message: `Pick at most ${g.maxSelections} for ${g.name} on ${m.name}.` };
+    if (g.required && n === 0) {
+      const opts = g.options.map((o) => (o.priceNaira ? `${o.name} (+${naira(o.priceNaira)})` : o.name)).join(', ');
+      return {
+        ok: false,
+        error: 'NEEDS_CHOICE',
+        message: `${m.name} needs a ${g.name} choice: ${opts}. Ask the customer which one.`,
+        pending: { itemId: m.id, itemName: m.name, group: g.name, options: g.options.map((o) => ({ name: o.name, extra_price_naira: o.priceNaira })) },
+      };
+    }
+  }
+  return { ok: true, choices: out };
+}
+
+function fail(label: string, error: string, message: string, data?: unknown): ToolOutcome {
+  return { ok: false, label, result: { error, message }, ...(data !== undefined ? { data } : {}) };
 }
 
 export async function executeTool(name: string, rawArgs: string, env: ToolEnv): Promise<ToolOutcome> {
@@ -178,13 +259,14 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
         .filter((m) => m.available && (maxPrice === undefined || m.priceNaira <= maxPrice))
         .sort((a, b) => a.priceNaira - b.priceNaira)
         .slice(0, MAX_MENU_ITEMS)
-        .map((m) => ({ id: m.id, name: m.name, price_naira: m.priceNaira, description: clip(m.description) }));
+        .map((m) => ({ id: m.id, name: m.name, price_naira: m.priceNaira, description: clip(m.description), ...choicesForModel(m) }));
       const restaurantName = state.restaurantNames.get(restaurantId) ?? restaurantId;
       return {
         ok: true,
         label: `Read menu: ${restaurantName}`,
         result: { note: UNTRUSTED_NOTE, restaurant_id: restaurantId, items },
-        data: { restaurantId, items: items.map(({ id, name, price_naira }) => ({ id, name, price_naira })) },
+        // `choices` lets the app offer a required pick as buttons; it never picks.
+        data: { restaurantId, items: items.map(({ id, name, price_naira, choices }) => ({ id, name, price_naira, ...(choices ? { choices } : {}) })) },
       };
     }
     case 'get_my_recent_orders': {
@@ -194,7 +276,7 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
         reference: o.reference,
         restaurant_id: o.restaurantId,
         restaurant: o.restaurantName,
-        items: o.lines.map((l) => ({ item_id: l.itemId, name: l.name, quantity: l.quantity })),
+        items: o.lines.map((l) => ({ item_id: l.itemId, name: l.name, quantity: l.quantity, ...(l.choices?.length ? { choices: l.choices } : {}) })),
         total_naira: o.totalNaira,
         status: o.status,
       }));
@@ -206,17 +288,28 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
       if (!Array.isArray(items) || items.length < 1 || items.length > 10) throw new ArgError('items must list 1 to 10 items');
       const lines = items.map((raw) => {
         const it = (raw ?? {}) as Record<string, unknown>;
-        return { itemId: str(it, 'item_id'), quantity: optInt(it, 'quantity', 1, 20) ?? 1 };
+        return { itemId: str(it, 'item_id'), quantity: optInt(it, 'quantity', 1, 20) ?? 1, picks: parseChoices(it.choices) };
       });
       const menu = await port.getMenu(ctx, restaurantId);
+      const cartLines: Cart['lines'] = [];
       for (const l of lines) {
         const m = menu.find((x) => x.id === l.itemId);
         if (!m) return fail('Cart rejected', 'INVALID_CART', `Item ${l.itemId} is not on this restaurant's menu.`);
         if (!m.available) return fail('Cart rejected', 'ITEM_UNAVAILABLE', `${m.name} is not available right now.`);
+        const checked = checkChoices(m, l.picks);
+        if (!checked.ok) {
+          return fail(
+            checked.error === 'NEEDS_CHOICE' ? 'Needs your choice' : 'Cart rejected',
+            checked.error,
+            checked.message,
+            checked.pending ? { needsChoice: checked.pending } : undefined,
+          );
+        }
+        cartLines.push({ itemId: l.itemId, quantity: l.quantity, ...(checked.choices.length ? { choices: checked.choices } : {}) });
       }
       const cartId = `cart_${++state.cartSeq}`;
-      state.carts.set(cartId, { restaurantId, lines });
-      const summary = lines.map((l) => ({ name: menu.find((m) => m.id === l.itemId)!.name, quantity: l.quantity }));
+      state.carts.set(cartId, { restaurantId, lines: cartLines });
+      const summary = cartLines.map((l) => ({ name: menu.find((m) => m.id === l.itemId)!.name, quantity: l.quantity, ...(l.choices ? { choices: l.choices } : {}) }));
       return { ok: true, label: 'Built cart', result: { cart_id: cartId, items: summary }, data: { cartId, items: summary } };
     }
     case 'quote_order': {
@@ -230,7 +323,12 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
       const result = {
         quote_id: quoteId,
         restaurant: quote.restaurantName,
-        lines: quote.lines.map((l) => ({ name: l.name, quantity: l.quantity, line_total_naira: l.lineTotalNaira })),
+        lines: quote.lines.map((l) => ({
+          name: l.name,
+          quantity: l.quantity,
+          line_total_naira: l.lineTotalNaira,
+          ...(l.choices?.length ? { choices: l.choices.map((c) => `${c.group}: ${c.option}`) } : {}),
+        })),
         subtotal_naira: quote.subtotalNaira,
         delivery_fee_naira: quote.deliveryFeeNaira,
         discount_naira: quote.discountNaira,
