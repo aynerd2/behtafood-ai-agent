@@ -27,6 +27,7 @@ import {
   turnFailed,
   type ConversationState,
 } from './conversation';
+import { PHOTO_REFUSAL, checkPhoto } from './photo';
 import type { PlacedOrder, StoredEvent } from './types';
 import {
   applySnapshot,
@@ -198,16 +199,21 @@ export class AssistantController {
     });
   }
 
-  async send(text: string): Promise<void> {
+  /** One message, optionally with one photo that the app has already resized. */
+  async send(text: string, photo?: string): Promise<void> {
     const clean = text.trim();
-    if (!clean || this.#state.busy) return;
+    if ((!clean && !photo) || this.#state.busy) return;
     const turnId = `turn_${++this.#turnSeq}`;
-    this.#set((s) => ({ ...startTurn(s, turnId, clean), busy: true, tracking: s.tracking }));
+    this.#set((s) => ({ ...startTurn(s, turnId, clean || 'Find me something like this.', photo), busy: true, tracking: s.tracking }));
     this.#emit({ type: 'turn_started', turnId });
     try {
       let runId: string;
       try {
-        const r = await this.#client.chat(clean, this.#state.sessionId);
+        if (photo && !checkPhoto(photo)) {
+          this.#conv((s) => turnFailed(s, turnId, PHOTO_REFUSAL));
+          return;
+        }
+        const r = await this.#client.chat(clean, this.#state.sessionId, photo);
         runId = r.runId;
         this.#conv((s) => turnAccepted(s, turnId, r));
       } catch (err) {

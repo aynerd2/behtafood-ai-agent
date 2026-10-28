@@ -14,6 +14,10 @@ A full flow is: ask (search, read menus, offer options), pick, then build the ca
 | 27 Oct, practice backend, rice dish | low | $0.0098 |
 | 27 Oct, practice backend, dish with a required choice | low | $0.0142 |
 
+## A message with a photo
+
+28 Oct, practice backend, one synthetic food picture (about 70 KB after shrinking), no text: 3 model calls (search, read menus, reply) cost **$0.0104**, about twice the same turn without a photo. The first call had about 2,850 prompt tokens. The photo is sent with that message only, so the next message costs the same as usual (the follow-up "something cheaper" added 2 calls and $0.0072).
+
 Between 79% and 89% of prompt tokens were served from Meta's automatic prompt cache, because the system prompt and tool list never change (`prompt_cache_key`). **Order tracking, delay messages and reminders use no model calls**, so they cost nothing.
 
 ## Caps

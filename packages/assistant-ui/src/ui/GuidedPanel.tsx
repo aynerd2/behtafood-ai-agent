@@ -16,6 +16,7 @@ import { ApprovalCard } from './ApprovalCard';
 import { ChoiceChips } from './Cards';
 import { useAssistantState, useNow } from './hooks';
 import { ModeToggle } from './ModeToggle';
+import { PhotoButton, PhotoPreview } from './PhotoAttach';
 import { useAssistantTheme } from './theme';
 
 const SUGGESTIONS = ['Jollof rice and chicken under ₦4,000', 'Find me something filling around ₦3,000'];
@@ -36,6 +37,8 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
   const state = useAssistantState(controller);
   const now = useNow(15_000);
   const [draft, setDraft] = useState('');
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const auto = guidedLayout(state, now);
   const sheet = auto === 'sheet' || expanded;
@@ -62,9 +65,10 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
           : session.current?.label ?? (working ? 'Working…' : 'Ask me for food and a budget.');
 
   const send = (text: string) => {
-    if (!text.trim() || state.busy) return;
+    if ((!text.trim() && !photo) || state.busy) return;
     setDraft('');
-    void controller.send(text);
+    setPhoto(null);
+    void controller.send(text, photo ?? undefined);
   };
 
   const controls = (
@@ -135,7 +139,7 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
                 ) : null}
                 {turn ? (
                   <Text style={[styles.you, { fontFamily: fonts.medium, color: colors.greyDark }]} numberOfLines={2}>
-                    You: {turn.userText}
+                    You: {turn.userText}{turn.photo ? ' (with a photo)' : ''}
                   </Text>
                 ) : null}
                 {turn?.error ? <Text style={{ color: colors.error, fontFamily: fonts.regular, fontSize: 14 }}>{turn.error.message}</Text> : null}
@@ -161,7 +165,17 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
                   <Text style={[styles.hint, { fontFamily: fonts.regular, color: colors.greyMedium }]}>Switch to Chat to see every step.</Text>
                 ) : null}
               </ScrollView>
+              {photo ? <PhotoPreview photo={photo} onRemove={() => setPhoto(null)} /> : null}
+              {photoError ? <Text style={{ color: colors.error, fontFamily: fonts.regular, fontSize: 12, paddingBottom: 6 }}>{photoError}</Text> : null}
               <View style={[styles.inputRow, { borderTopColor: colors.greyLight }]}>
+                <PhotoButton
+                  disabled={state.busy}
+                  onPhoto={(p) => {
+                    setPhoto(p);
+                    setPhotoError(null);
+                  }}
+                  onError={setPhotoError}
+                />
                 <TextInput
                   value={draft}
                   onChangeText={setDraft}
@@ -175,10 +189,10 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
                 />
                 <Pressable
                   onPress={() => send(draft)}
-                  disabled={state.busy || !draft.trim()}
+                  disabled={state.busy || (!draft.trim() && !photo)}
                   accessibilityRole="button"
                   accessibilityLabel="Send"
-                  style={[styles.send, { backgroundColor: colors.primary, opacity: state.busy || !draft.trim() ? 0.4 : 1 }]}
+                  style={[styles.send, { backgroundColor: colors.primary, opacity: state.busy || (!draft.trim() && !photo) ? 0.4 : 1 }]}
                 >
                   <Ionicons name="arrow-up" size={18} color={colors.white} />
                 </Pressable>

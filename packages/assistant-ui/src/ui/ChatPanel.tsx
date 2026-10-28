@@ -3,7 +3,7 @@
 // buttons when the assistant asked for a pick.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { latestChoicePrompt, timelineRows, type Turn } from '../logic/conversation';
@@ -14,6 +14,7 @@ import type { AssistantController } from '../logic/controller';
 import { plainReply } from '../logic/format';
 import type { GuideMode } from '../logic/guidedMode';
 import { ModeToggle } from './ModeToggle';
+import { PhotoButton, PhotoPreview } from './PhotoAttach';
 import { ActionTimeline } from './ActionTimeline';
 import { ApprovalCard } from './ApprovalCard';
 import { CartCard, ChoiceChips, RestaurantCards } from './Cards';
@@ -42,6 +43,8 @@ export function ChatPanel({ controller, onClose, onOpenOrder, title = 'Behtafood
   const state = useAssistantState(controller);
   const now = useNow(15_000);
   const [draft, setDraft] = useState('');
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const scroll = useRef<ScrollView>(null);
   const prompt = latestChoicePrompt(state);
 
@@ -51,9 +54,10 @@ export function ChatPanel({ controller, onClose, onOpenOrder, title = 'Behtafood
   }, [state.turns, state.cards]);
 
   const send = (text: string) => {
-    if (!text.trim() || state.busy) return;
+    if ((!text.trim() && !photo) || state.busy) return;
     setDraft('');
-    void controller.send(text);
+    setPhoto(null);
+    void controller.send(text, photo ?? undefined);
   };
 
   return (
@@ -98,7 +102,17 @@ export function ChatPanel({ controller, onClose, onOpenOrder, title = 'Behtafood
         {prompt ? <ChoiceChips prompt={prompt} disabled={state.busy} onPick={(o) => void controller.pickChoice(o)} /> : null}
       </ScrollView>
 
+      {photo ? <PhotoPreview photo={photo} onRemove={() => setPhoto(null)} /> : null}
+      {photoError ? <Text style={[styles.photoError, { color: colors.error, fontFamily: fonts.regular }]}>{photoError}</Text> : null}
       <View style={[styles.inputRow, { borderTopColor: colors.greyLight, paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <PhotoButton
+          disabled={state.busy}
+          onPhoto={(p) => {
+            setPhoto(p);
+            setPhotoError(null);
+          }}
+          onError={setPhotoError}
+        />
         <TextInput
           value={draft}
           onChangeText={setDraft}
@@ -112,10 +126,10 @@ export function ChatPanel({ controller, onClose, onOpenOrder, title = 'Behtafood
         />
         <Pressable
           onPress={() => send(draft)}
-          disabled={state.busy || !draft.trim()}
+          disabled={state.busy || (!draft.trim() && !photo)}
           accessibilityRole="button"
           accessibilityLabel="Send"
-          style={[styles.send, { backgroundColor: colors.primary, opacity: state.busy || !draft.trim() ? 0.4 : 1 }]}
+          style={[styles.send, { backgroundColor: colors.primary, opacity: state.busy || (!draft.trim() && !photo) ? 0.4 : 1 }]}
         >
           <Ionicons name="arrow-up" size={20} color={colors.white} />
         </Pressable>
@@ -138,6 +152,7 @@ function TurnView({ turn, cards, tracking, controller, now, onOpenOrder }: TurnV
   return (
     <View style={styles.turn}>
       <View style={[styles.userBubble, { backgroundColor: colors.primary }]}>
+        {turn.photo ? <Image source={{ uri: turn.photo }} style={styles.sentPhoto} accessibilityLabel="Your photo" /> : null}
         <Text style={[styles.body, { fontFamily: fonts.medium, color: colors.white }]}>{turn.userText}</Text>
       </View>
       <ActionTimeline rows={timelineRows(turn, cards, now)} />
@@ -188,4 +203,6 @@ const styles = StyleSheet.create({
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 12, paddingTop: 8, borderTopWidth: 1 },
   input: { flex: 1, minHeight: 44, maxHeight: 120, borderWidth: 1, borderRadius: 22, paddingHorizontal: 14, paddingTop: 11, paddingBottom: 11, fontSize: 15 },
   send: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  photoError: { fontSize: 12, paddingHorizontal: 12, paddingTop: 6 },
+  sentPhoto: { width: 120, height: 120, borderRadius: 10, marginBottom: 6 },
 });

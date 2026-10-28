@@ -12,6 +12,8 @@ It runs on Meta's **Muse Spark** (`muse-spark-1.3`) with plain function calling.
 4. Approve: one wallet order is placed, and its reference is shown.
 5. Tracking: each real status change appears with **zero model calls**. If the order runs late, a fixed message offers a polite reminder to the restaurant or rider.
 
+**Photo input:** the customer can attach one food photo ("find me something like this"). The app shrinks it (longest edge 1024 px, JPEG) and the server accepts JPEG or PNG up to 1.5 MB. The assistant says in plain words what the dish looks like, without claiming certainty, then searches the real menus. The photo is used for that one message and is not stored. We tested this with pictures we drew ourselves; dish recognition can be wrong, and the customer always picks and approves.
+
 In the recorded demo, the restaurant and rider are **simulated**: a practice-only script moves the order through their real app endpoints on a local test server with fake data.
 
 ## Run it in mock mode (no key needed)
@@ -61,7 +63,7 @@ Each rule has a test; see [docs/safety.md](docs/safety.md).
 - **Re-quote on approval.** If the total changed since the card was shown, nothing is placed and the new total is shown for a fresh approval. Cards expire after 10 minutes.
 - **One order per proposal.** The proposal id is the order's idempotency key, so a double tap or retry never creates a second order.
 - **Unconfirmed-order check.** If an approval's outcome is unknown (for example a lost response), the proposal stays "unconfirmed" and never expires on its own. Every later Approve or "Ask again" first looks the order up by its id.
-- **Prompt injection.** Restaurant and menu text reaches the model labelled as untrusted data. A menu item that tells the agent to order causes no order.
+- **Prompt injection.** Restaurant and menu text reaches the model labelled as untrusted data. A menu item that tells the agent to order causes no order. Text inside a photo is untrusted too, and a photo can never trigger a purchase.
 - **Wallet only.** Low balance, unavailable items and closed restaurants are refused with a reason.
 - **Caps.** Per-customer message rate limit, at most 8 model calls per message, and daily spend caps per customer and overall.
 - **Honest wording.** A timeline step appears only after the server reports it. Failures show as failures. A reminder is "sent" or "couldn't send", never "delivered" or "read".
@@ -81,7 +83,7 @@ Text only, measured on 10 prompts per language ([docs/languages.md](docs/languag
 
 ## Cost
 
-Measured with `muse-spark-1.3` at low reasoning effort: **about $0.008 to $0.015 per full order flow** (7 model calls, 79 to 89% of prompt tokens served from Meta's prompt cache). Tracking and reminders use no model calls. Details and how to measure again: [docs/cost.md](docs/cost.md).
+Measured with `muse-spark-1.3` at low reasoning effort: **about $0.008 to $0.015 per full order flow** (7 model calls, 79 to 89% of prompt tokens served from Meta's prompt cache). Tracking and reminders use no model calls. A message with a photo costs more (in our test, $0.0104 for its 3 model calls, about twice a text message). Details and how to measure again: [docs/cost.md](docs/cost.md).
 
 ## Built during the hackathon vs existing Behtafood
 

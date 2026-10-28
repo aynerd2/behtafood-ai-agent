@@ -64,6 +64,8 @@ export interface Turn {
   proposalIds: string[];
   reply?: string;
   error?: { code?: string; message: string };
+  /** The photo sent with this message (shown as a thumbnail; kept in the app only). */
+  photo?: string;
   /** From a NEEDS_CHOICE step in this turn. */
   choicePrompt?: ChoicePrompt;
 }
@@ -92,8 +94,8 @@ function updateTurn(s: ConversationState, turnId: string, fn: (t: Turn) => Turn)
   return { ...s, turns: s.turns.map((t) => (t.id === turnId ? fn(t) : t)) };
 }
 
-export function startTurn(s: ConversationState, turnId: string, userText: string): ConversationState {
-  const turn: Turn = { id: turnId, userText, status: 'sending', lastSeq: 0, steps: [], carts: [], proposalIds: [] };
+export function startTurn(s: ConversationState, turnId: string, userText: string, photo?: string): ConversationState {
+  const turn: Turn = { id: turnId, userText, status: 'sending', lastSeq: 0, steps: [], carts: [], proposalIds: [], ...(photo ? { photo } : {}) };
   return { ...s, turns: [...s.turns, turn] };
 }
 

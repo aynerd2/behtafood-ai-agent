@@ -17,14 +17,15 @@ This repo holds `agent-core`, `assistant-ui` and a mock API. Behtafood's private
 - **Tools** (`tools.ts`): `search_restaurants`, `get_menu`, `get_my_recent_orders`, `build_cart`, `quote_order`, `propose_order`, `get_order_status`, `nudge_vendor`, `nudge_rider`. None places or pays for an order.
 - **Proposals** (`proposals.ts`): a proposal stores the server's quote. `approve()` is called only by the approval endpoint. It re-quotes, checks the wallet, and places one order with the proposal id as the order's `checkoutSessionId`. After an uncertain outcome the proposal is `unconfirmed`, and `check()` and every later `approve()` look the order up first.
 - **Usage meter** (`usage.ts`): logs each model call's tokens and cost, and enforces daily spend caps.
+- **Photos** (`image.ts`): one JPEG or PNG per message, at most 1.5 MB, checked before the model sees it. It is sent to the model as an `image_url` data URL at low detail, for that message only; afterwards the conversation keeps a short note instead.
 - **Delays and reminders** (`delays.ts`, `nudges.ts`): fixed delay rules and messages; polite reminder templates with limits.
 - **`BehtafoodPort`** (`port.ts`): the contract a backend implements. Every call carries the customer's own context.
 - **Models** (`model.ts`, `scripted.ts`): `MetaModelClient` (Chat Completions, low reasoning effort, prompt cache key) and `ScriptedDemoModel`, an offline test stand-in.
 
 ## assistant-ui (`packages/assistant-ui`)
 
-- `src/logic` (plain TypeScript, tested on Node): the HTTP client; the conversation reducer that turns server events into timeline rows and cards; the approval-card states; dish-choice buttons; the polling controller; order tracking; and Guided mode (the map from successful steps to app screens, the Chat/Guided switch, Stop, pause on touch, and pacing).
-- `src/ui` (React Native): floating button, chat panel, action timeline, approval card, restaurant, cart and choice cards, tracking card, and the Guided bar. The host app passes its colours, fonts and screen navigation in. The screens are typechecked in the host app, which has the React Native types.
+- `src/logic` (plain TypeScript, tested on Node): the HTTP client; the conversation reducer that turns server events into timeline rows and cards; the approval-card states; dish-choice buttons; the polling controller; order tracking; photo checks; and Guided mode (the map from successful steps to app screens, the Chat/Guided switch, Stop, pause on touch, and pacing).
+- `src/ui` (React Native): floating button, chat panel, action timeline, approval card, restaurant, cart and choice cards, tracking card, the Guided bar, and the photo button with preview. The photo button uses `expo-image-picker`, and shrinks the photo in an invisible `react-native-webview` canvas, so no extra native module is needed. The host app passes its colours, fonts and screen navigation in. The screens are typechecked in the host app, which has the React Native types.
 
 ## Mock API (`apps/mock-api`)
 

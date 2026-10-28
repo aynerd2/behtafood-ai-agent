@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { HEALTH_REFUSAL, isHealthAdviceRequest } from './guard';
+import { IMAGE_REFUSAL, checkImageDataUrl } from './image';
 import { RateLimiter } from './limits';
 import type { ChatMessage, ContentPart, ModelClient } from './model';
 import { NudgeService } from './nudges';
@@ -75,13 +76,22 @@ export class Agent {
   ): Promise<{ sessionId: string }> {
     const session = this.#session(ctx, input.sessionId);
     emit({ type: 'session', sessionId: session.id });
+    // The photo is used for this message only; afterwards the conversation keeps
+    // a note instead, so it is never stored or sent to the model again.
+    let photoMessage: ChatMessage | undefined;
     const finish = () => {
+      if (photoMessage) photoMessage.content = `${text}\n[The customer sent a photo with this message. It is not kept.]`;
       const s = this.usage.session(session.id);
       emit({ type: 'done', modelCalls: s.modelCalls, costUsd: s.costUsd });
       return { sessionId: session.id };
     };
 
-    const text = (input.text ?? '').trim();
+    const image = input.imageDataUrl ? input.imageDataUrl : undefined;
+    if (image && !checkImageDataUrl(image).ok) {
+      emit({ type: 'error', code: 'bad_request', message: IMAGE_REFUSAL });
+      return finish();
+    }
+    const text = (input.text ?? '').trim() || (image ? 'Find me something like this.' : '');
     if (!text || text.length > MAX_MESSAGE_CHARS) {
       emit({ type: 'error', code: 'bad_request', message: `Messages must be 1 to ${MAX_MESSAGE_CHARS} characters.` });
       return finish();
@@ -95,10 +105,12 @@ export class Agent {
       return finish();
     }
 
-    const content: string | ContentPart[] = input.imageDataUrl
-      ? [{ type: 'text', text }, { type: 'image_url', image_url: { url: input.imageDataUrl, detail: 'low' } }]
+    const content: string | ContentPart[] = image
+      ? [{ type: 'text', text }, { type: 'image_url', image_url: { url: image, detail: 'low' } }]
       : text;
-    session.messages.push({ role: 'user', content });
+    const userMessage: ChatMessage = { role: 'user', content };
+    session.messages.push(userMessage);
+    if (image) photoMessage = userMessage;
 
     for (let call = 0; call < this.#maxCalls; call++) {
       const spend = this.usage.canSpend(ctx.customerId);

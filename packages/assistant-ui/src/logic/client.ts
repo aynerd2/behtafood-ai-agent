@@ -26,7 +26,8 @@ export class AgentApiError extends Error {
 }
 
 export interface AgentClient {
-  chat(text: string, sessionId?: string): Promise<{ runId: string; sessionId: string | null }>;
+  /** One message, optionally with one photo (a JPEG or PNG data URL, at most 1.5 MB). */
+  chat(text: string, sessionId?: string, imageDataUrl?: string): Promise<{ runId: string; sessionId: string | null }>;
   events(runId: string, after: number): Promise<{ finished: boolean; events: StoredEvent[] }>;
   approve(proposalId: string): Promise<ApproveResult>;
   cancel(proposalId: string): Promise<{ cancelled: boolean }>;
@@ -99,7 +100,8 @@ export function createAgentClient(opts: AgentClientOptions): AgentClient {
   }
 
   return {
-    chat: (text, sessionId) => request('POST', '/chat', { text, ...(sessionId ? { sessionId } : {}) }),
+    chat: (text, sessionId, imageDataUrl) =>
+      request('POST', '/chat', { text, ...(sessionId ? { sessionId } : {}), ...(imageDataUrl ? { imageDataUrl } : {}) }),
     events: (runId, after) => request('GET', `/runs/${encodeURIComponent(runId)}/events?after=${after}`),
     approve: (proposalId) => request('POST', '/approve', { proposalId }),
     cancel: (proposalId) => request('POST', '/cancel', { proposalId }),
