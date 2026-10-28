@@ -3,7 +3,7 @@
 //
 //   npm run chat            interactive, offline scripted model
 //   npm run chat -- --live  interactive, Muse Spark (needs META_API_KEY)
-//   npm run demo            runs the PRD demo path automatically
+//   npm run demo            runs the demo path automatically
 
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';

@@ -145,7 +145,7 @@ describe('AssistantController', () => {
     assert.match(card.message ?? '', /ask/i);
   });
 
-  describe('T5c: Ask again looks the order up first', () => {
+  describe('Ask again looks the order up first', () => {
     async function unconfirmed() {
       const t = setup();
       t.client.batches = [happyRun()];
@@ -214,7 +214,7 @@ describe('AssistantController', () => {
     assert.deepEqual(seen, ['turn_started', ...run.map((e) => `event:${e.seq}`), 'placed']);
   });
 
-  test('T6: after an order is placed, tracking polls the status endpoint (no chat, no model) until delivered', async () => {
+  test('after an order is placed, tracking polls the status endpoint (no chat, no model) until delivered', async () => {
     const { client, c } = setup();
     client.batches = [happyRun()];
     await c.send('order');
@@ -229,7 +229,7 @@ describe('AssistantController', () => {
     assert.equal(client.chats.length, chats, 'no chat message, so no model call');
   });
 
-  test('T6: a reminder button calls the nudge endpoint and records the honest result', async () => {
+  test('a reminder button calls the nudge endpoint and records the honest result', async () => {
     const { client, c } = setup();
     client.batches = [happyRun()];
     await c.send('order');

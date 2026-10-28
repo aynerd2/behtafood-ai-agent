@@ -270,7 +270,7 @@ describe('bar or sheet', () => {
     assert.equal(guidedLayout({ ...s, busy: false, tracking: {} }, NOW), 'bar');
   });
 
-  test('T6: a delay with reminder buttons expands the sheet over the tracking screen', () => {
+  test('a delay with reminder buttons expands the sheet over the tracking screen', () => {
     let s = turnAccepted(startTurn(initialState(), 't1', 'order'), 't1', { runId: 'r', sessionId: null });
     s = applyRunEvents(s, 't1', happyRun(), true);
     s = { ...s, cards: { prop_1: approveResolved(approveStarted(s.cards.prop_1!), PLACED) } };

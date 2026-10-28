@@ -1,4 +1,4 @@
-// T6: order tracking with no model, delay rules, and polite reminders.
+// Order tracking with no model, delay rules, and polite reminders.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';

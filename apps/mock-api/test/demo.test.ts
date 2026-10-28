@@ -1,4 +1,4 @@
-// The PRD demo path end to end with the offline scripted model, plus the
+// The demo path end to end with the offline scripted model, plus the
 // timeline and budget rules the UI depends on.
 
 import { describe, test } from 'node:test';

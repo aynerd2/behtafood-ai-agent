@@ -1,6 +1,6 @@
 // The conversation as the chat panel draws it, built only from server events.
 //
-// Rules this encodes (PRD FR-5):
+// Rules this encodes:
 //   - A step appears only when its event has arrived, with the status the
 //     event gives it. Nothing is ever shown as done ahead of the server.
 //   - Failures stay failures. An error event is a failed row with its message.

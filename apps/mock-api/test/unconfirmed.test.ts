@@ -1,4 +1,4 @@
-// T5c: an approval whose outcome was not confirmed must never become
+// An approval whose outcome was not confirmed must never become
 // "expired" on its own. Every later Approve or check looks the order up by its
 // checkoutSessionId first, so a placed order is reported, never placed twice,
 // and the customer may ask again only once the lookup confirms there is none.

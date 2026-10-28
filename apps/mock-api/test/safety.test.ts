@@ -1,4 +1,4 @@
-// PRD section 8 safety rules, one block per rule, against the mock backend.
+// The safety rules (docs/safety.md), one block per rule, against the mock backend.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';

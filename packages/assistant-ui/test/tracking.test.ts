@@ -1,4 +1,4 @@
-// T6 in the app: real status changes become timeline steps, a delay posts a
+// Order tracking in the app: real status changes become timeline steps, a delay posts a
 // fixed message with reminder buttons, and reminder results are reported honestly.
 
 import { describe, test } from 'node:test';

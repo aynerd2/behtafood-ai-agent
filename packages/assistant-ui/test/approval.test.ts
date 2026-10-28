@@ -102,14 +102,14 @@ describe('approval card', () => {
     assert.equal(cancelResolved(cancelStarted(newCard(proposal())), false).status, 'lost');
   });
 
-  test('T5c: a not-confirmed card never expires on its own; it offers Approve (server checks first) and Ask again (app checks first), not Cancel', () => {
+  test('a not-confirmed card never expires on its own; it offers Approve (server checks first) and Ask again (app checks first), not Cancel', () => {
     const u = approveResolved(approveStarted(newCard(proposal())), { status: 'uncertain', message: 'We could not confirm the order.' });
     const later = NOW + 60 * 60_000;
     assert.equal(effectiveStatus(u, later), 'uncertain');
     assert.deepEqual(cardActions(u, later), { approve: true, cancel: false, askAgain: true, openOrder: false });
   });
 
-  test('T5c: when the server could not check, the card says so, points to My Orders, and offers only Check again', () => {
+  test('when the server could not check, the card says so, points to My Orders, and offers only Check again', () => {
     const c = approveResolved(approveStarted(newCard(proposal())), {
       status: 'uncertain',
       lookupFailed: true,
@@ -120,7 +120,7 @@ describe('approval card', () => {
     assert.deepEqual(cardActions(c, NOW + 60 * 60_000), { approve: true, cancel: false, askAgain: false, openOrder: false });
   });
 
-  test('T5c: a check that finds the order shows "Your order was placed: <reference>" with View order', () => {
+  test('a check that finds the order shows "Your order was placed: <reference>" with View order', () => {
     const u = approveResolved(approveStarted(newCard(proposal())), { status: 'uncertain', message: 'x' });
     const c = checkResolved(checkStarted(u), { status: 'placed', order: (PLACED as any).order });
     assert.equal(c.status, 'placed');
@@ -128,7 +128,7 @@ describe('approval card', () => {
     assert.deepEqual(cardActions(c, NOW), { approve: false, cancel: false, askAgain: false, openOrder: true });
   });
 
-  test('T5c: a check that confirms no order allows asking again; a failed check does not', () => {
+  test('a check that confirms no order allows asking again; a failed check does not', () => {
     const u = approveResolved(approveStarted(newCard(proposal())), { status: 'uncertain', message: 'x' });
     const none = checkResolved(checkStarted(u), { status: 'not_placed' });
     assert.equal(none.status, 'not_placed');

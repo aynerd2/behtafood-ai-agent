@@ -1,85 +1,103 @@
 # Behtafood AI Agent
 
-An AI food-ordering assistant for [Behtafood](https://behtafood.com), a food delivery service in Ado-Ekiti, Nigeria. A customer says what they want and their budget ("something filling around ₦3,000, rice and chicken"). The agent searches real restaurants and menus, compares options within the budget (delivery fee included), builds a cart, and shows the server's quote on an approval card. **Nothing is bought until the customer taps Approve.** Then exactly one wallet order is placed.
+An AI ordering assistant for [Behtafood](https://behtafood.com), a food delivery platform in Ado-Ekiti, Nigeria. It is for customers who know what they feel like eating and how much they want to spend, but not which of 60+ menus to scroll through. A customer types, in English or Nigerian Pidgin, something like "jollof rice and chicken under ₦4,000". The agent searches restaurants and menus, asks for any required choice (for example the protein), and shows the server's real quote on an approval card. **Nothing is bought until the customer taps Approve.** Then exactly one wallet order is placed, and the order is tracked to delivery.
 
-It runs on Meta's **Muse Spark** (`muse-spark-1.3`) with plain function calling: no orchestration framework, no MCP.
+It runs on Meta's **Muse Spark** (`muse-spark-1.3`) with plain function calling. There is no orchestration framework and no MCP.
 
-## Built during the hackathon vs. existing Behtafood
+## Demo path
 
-Everything in this repository was written during the hackathon (27 Oct to 4 Nov 2026). The Behtafood product it plugs into existed before and is private.
+1. "Jollof rice and chicken under ₦4,000": the agent searches, reads menus and offers options with the delivery fee included.
+2. It asks for the required choice (Protein: Chicken, Beef or Turkey +₦800). The customer taps one.
+3. Cart, then the server's quote, then an approval card with Approve and Cancel.
+4. Approve: one wallet order is placed, and its reference is shown.
+5. Tracking: each real status change appears with **zero model calls**. If the order runs late, a fixed message offers a polite reminder to the restaurant or rider.
 
-| Part | Status | Where |
-|---|---|---|
-| Agent loop, tool schemas, system prompt (`packages/agent-core`) | **New (hackathon)** | this repo |
-| Proposal and approval state machine, idempotent approval | **New (hackathon)** | this repo |
-| Usage meter, spend caps, rate limits, call caps, topic guard | **New (hackathon)** | this repo |
-| Templated vendor/rider nudges with limits | **New (hackathon)** | this repo |
-| `BehtafoodPort` contract and the fake-data mock API | **New (hackathon)** | this repo |
-| Terminal chat and offline scripted demo model | **New (hackathon)** | this repo |
-| Assistant UI components (`packages/assistant-ui`) | **New (hackathon)**, in progress | this repo (coming) |
-| Backend adapter implementing `BehtafoodPort`, `/api/agent/*` routes | **New (hackathon)** | private Behtafood backend |
-| Floating assistant button in the customer app | **New (hackathon)** | private customer app |
-| Customer, vendor and rider apps, ordering, wallet, payments, delivery tracking | Existing Behtafood product | private, not in this repo |
+In the recorded demo, the restaurant and rider are **simulated**: a practice-only script moves the order through their real app endpoints on a local test server with fake data.
 
-All data in this repo (restaurants, dishes, prices, customers, tokens) is invented. There are no real vendors, photos or customer data.
+## Run it in mock mode (no key needed)
 
-## Run it in mock mode (no API key needed)
-
-Requires Node.js 22 or newer.
+Requires Node.js 22 or newer. All data here (restaurants, dishes, customers, tokens) is invented.
 
 ```bash
 npm install
-npm test          # the safety and demo-path tests
-npm run demo      # the full demo path in the terminal
-npm run chat      # chat yourself; type /approve to approve a proposed order
+npm test            # all tests, offline
+npm run typecheck
+npm run demo        # the demo path in the terminal
+npm run chat        # chat yourself; /approve approves the proposed order
+npm run mock-api    # HTTP API on port 7100 (see docs/architecture.md)
 ```
 
-Without a key, the agent's "brain" is `ScriptedDemoModel`, a small rule-based stand-in that only handles English demo-style requests. It exists so that anyone can run and test the whole flow offline.
+Without a key, the agent's model is `ScriptedDemoModel`, a small rule-based **test stand-in**. It is not intelligent and only handles English demo-style requests. It exists so anyone can run the whole flow offline.
 
-### With the real model
+## Run it with the real Muse Spark model
+
+The key is read from the `META_API_KEY` environment variable only. Never commit it (`.env*` is ignored by git).
 
 ```bash
-# set META_API_KEY in your environment first (never commit it)
+# set META_API_KEY in your shell first
 npm run chat -- --live
 npm run mock-api -- --live
-LIVE_TESTS=1 npm test   # adds the live demo-path and prompt-injection tests (~$0.02)
+LIVE_TESTS=1 npm test     # opt-in live tests (demo path and prompt injection), about $0.02
 ```
 
 Optional: `AGENT_MODEL` (default `muse-spark-1.3`) and `AGENT_REASONING_EFFORT` (default `low`).
 
-### HTTP API
+## Architecture
 
-`npm run mock-api` starts the server on port 7100 (`PORT` changes it). The agent routes return 404 unless the agent is enabled (`--agent-enabled` or `AGENT_ENABLED=true`); the npm script enables it.
-
-| Route | What it does |
+| Part | What it is |
 |---|---|
-| `POST /api/agent/chat` `{ message, sessionId? }` | Streams timeline events (server-sent events) |
-| `POST /api/agent/approve` `{ proposalId }` | The only way an order is placed |
-| `POST /api/agent/cancel` `{ proposalId }` | Cancels an approval card |
-| `GET /api/agent/usage` | Model calls, tokens and cost for this customer |
-| `POST /mock/orders/:id/advance` `{ status }` | Demo stand-in for the vendor and rider apps |
+| `packages/agent-core` | The agent loop, 9 tool schemas, system prompt, proposal and approval state machine, usage meter and caps, delay rules, reminder templates, and the `BehtafoodPort` interface. No dependencies. |
+| `packages/assistant-ui` | React Native UI: floating button, chat panel, live action timeline, approval card, choice buttons, order tracking card, and Guided mode. Its logic (in `src/logic`) is plain TypeScript, tested on Node. |
+| `apps/mock-api` | Fake data, an in-memory `BehtafoodPort`, an HTTP server with the same routes as the real backend, and the terminal demo and chat. |
+| Private Behtafood adapter (**not in this repo**) | In Behtafood's private backend: an implementation of `BehtafoodPort` that calls Behtafood's existing endpoints as the signed-in customer, plus the `/api/agent/*` routes, all switched off unless `AGENT_ENABLED=true`. The customer app copies `assistant-ui` in. Code flows one way, from this repo into the private ones. |
 
-Authenticate as a demo customer with `Authorization: Bearer demo-token-ada` (₦15,000 wallet) or `demo-token-tunde` (₦800 wallet, for the low-balance case).
+More detail: [docs/architecture.md](docs/architecture.md).
 
-## How it stays safe
+## Safety rules
 
-- **The model cannot spend money.** It has no tool that places, pays for or approves an order. `propose_order` only creates an approval card; the order is placed only when the app calls `/api/agent/approve` after the customer taps Approve.
-- **Server prices only.** Each proposal stores the server's quote and expires after 10 minutes. Approval re-quotes. If the total changed, it refuses and shows the new total for a fresh approval.
-- **No duplicate orders.** The proposal id is the order's `checkoutSessionId`. A double tap shares one attempt. After an uncertain outcome (such as a lost network response), the order is looked up by that id before anything is retried.
-- **Clear refusals.** Low wallet balance, an unavailable item, or a restaurant closed by its vendor or by an admin all refuse with a reason and place nothing.
-- **Prompt injection.** Restaurant and menu text is passed to the model labelled as untrusted data. The tests include a menu item whose description tells the agent to order; it causes no order, offline or with the live model.
-- **Limits.** Per-customer message rate limit, at most 8 model calls per message, and daily spend caps per customer and overall.
-- **Truthful timeline.** A step appears only after its tool call has returned. Failures show as failures, and waiting for approval is its own event.
-- **Nudges.** Fixed templates only, sent only after the customer says yes, at most 1 per party per 10 minutes and 2 per order, for the customer's own active order. Every attempt is logged.
-- **No health, allergy or nutrition advice.** These messages get a fixed reply before any model call.
+Each rule has a test; see [docs/safety.md](docs/safety.md).
 
-## Layout
+- **The model can never place an order.** It has no tool that places, pays for or approves anything. Only the customer's Approve tap calls the approval endpoint.
+- **Re-quote on approval.** If the total changed since the card was shown, nothing is placed and the new total is shown for a fresh approval. Cards expire after 10 minutes.
+- **One order per proposal.** The proposal id is the order's idempotency key, so a double tap or retry never creates a second order.
+- **Unconfirmed-order check.** If an approval's outcome is unknown (for example a lost response), the proposal stays "unconfirmed" and never expires on its own. Every later Approve or "Ask again" first looks the order up by its id.
+- **Prompt injection.** Restaurant and menu text reaches the model labelled as untrusted data. A menu item that tells the agent to order causes no order.
+- **Wallet only.** Low balance, unavailable items and closed restaurants are refused with a reason.
+- **Caps.** Per-customer message rate limit, at most 8 model calls per message, and daily spend caps per customer and overall.
+- **Honest wording.** A timeline step appears only after the server reports it. Failures show as failures. A reminder is "sent" or "couldn't send", never "delivered" or "read".
+- No health, allergy or nutrition advice: such messages get a fixed reply before any model call.
 
-```
-packages/agent-core/   agent loop, tools, prompt, proposals, nudges, usage meter, BehtafoodPort
-apps/mock-api/         fake data, MockBehtafoodPort, HTTP server, terminal chat, tests
-```
+## Languages
+
+Text only, measured on 10 prompts per language ([docs/languages.md](docs/languages.md)):
+
+| Language | Understood the request | Replied in the same language | Status |
+|---|---|---|---|
+| English | 10/10 | 10/10 | Tested |
+| Nigerian Pidgin | 10/10 | 9/10 | Tested |
+| Yoruba | 10/10 | 10/10 | Tested by us, not verified by native speakers |
+| Hausa | 10/10 | 10/10 | Tested by us, not verified by native speakers |
+| Igbo | 10/10 | 10/10 | Tested by us, not verified by native speakers |
 
 ## Cost
 
-Measured with `muse-spark-1.3` at low reasoning effort on the demo path (search, read menus, offer options, pick, build cart, quote, propose): **about $0.011 per full order flow**, with about 80% of prompt tokens served from Meta's automatic prompt cache. Order status updates use no model calls.
+Measured with `muse-spark-1.3` at low reasoning effort: **about $0.008 to $0.015 per full order flow** (7 model calls, 79 to 89% of prompt tokens served from Meta's prompt cache). Tracking and reminders use no model calls. Details and how to measure again: [docs/cost.md](docs/cost.md).
+
+## Built during the hackathon vs existing Behtafood
+
+The hackathon ran 27 Oct to 4 Nov 2026.
+
+| Existing before 27 Oct 2026 (private) | Built during the hackathon |
+|---|---|
+| The Behtafood platform and its live service | **This repo:** `agent-core`, `assistant-ui`, the mock API, and all tests |
+| Behtafood backend (Node, Express, MongoDB) | **Private backend:** the `BehtafoodPort` adapter and the `/api/agent/*` routes |
+| Customer app (Expo, React Native) | **Private customer app:** the assistant integration and Guided mode |
+| Wallet, ordering, pricing, payments and order lifecycle | **Private backend:** order tracking with delay detection, and polite reminders |
+| Security fixes completed before 26 Oct 2026 | **Private backend:** a practice-only order simulator that plays the restaurant and rider |
+| The `dev:memory` local practice server with fake data | |
+
+The agent uses Behtafood's existing ordering, pricing and wallet code unchanged: the adapter calls the existing endpoints as the customer.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
