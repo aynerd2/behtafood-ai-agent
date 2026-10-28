@@ -1,6 +1,6 @@
 # Behtafood AI Agent
 
-An AI ordering assistant for [Behtafood](https://behtafood.com), a food delivery platform in Ado-Ekiti, Nigeria. It is for customers who know what they feel like eating and how much they want to spend, but not which of 60+ menus to scroll through. A customer types, in English or Nigerian Pidgin, something like "jollof rice and chicken under ₦4,000". The agent searches restaurants and menus, asks for any required choice (for example the protein), and shows the server's real quote on an approval card. **Nothing is bought until the customer taps Approve.** Then exactly one wallet order is placed, and the order is tracked to delivery.
+An AI-powered food ordering assistant for [Behtafood](https://behtafood.com), a food and restaurant marketplace connecting customers with restaurants in Ado-Ekiti, Nigeria. It helps customers who know what they feel like eating and how much they want to spend but don't want to scroll through 60+ menus to find the right meal. A customer types in English or Nigerian Pidgin, for example, “jollof rice and chicken under ₦4,000.” The agent searches available restaurants and menus, asks for any required choices (such as protein), and presents the server-verified price on an approval card. **Nothing is ordered until the customer taps Approve.** Once approved, exactly one order is placed using the customer's wallet, and the customer can track the order through fulfilment.
 
 It runs on Meta's **Muse Spark** (`muse-spark-1.3`) with plain function calling. There is no orchestration framework and no MCP.
 
