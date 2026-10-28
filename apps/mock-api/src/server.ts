@@ -4,7 +4,18 @@
 // the agent is enabled.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { Agent, type ModelClient, type OrderStatus, type TimelineEvent } from '@behtafood-agent/agent-core';
+import {
+  Agent,
+  PortError,
+  StageClock,
+  delayThresholdsFromEnv,
+  nudgeResultText,
+  trackingSnapshot,
+  type ModelClient,
+  type NudgeParty,
+  type OrderStatus,
+  type TimelineEvent,
+} from '@behtafood-agent/agent-core';
 import { MockBehtafoodPort } from './mockPort';
 
 export interface MockServerOptions {
@@ -14,7 +25,7 @@ export interface MockServerOptions {
 }
 
 const MAX_BODY_BYTES = 6 * 1024 * 1024; // room for one compressed photo
-const ORDER_STATUSES: OrderStatus[] = ['pending', 'accepted', 'preparing', 'rider_assigned', 'on_the_way', 'delivered', 'cancelled'];
+const ORDER_STATUSES: OrderStatus[] = ['pending', 'accepted', 'preparing', 'ready', 'rider_assigned', 'picked_up', 'on_the_way', 'delivered', 'cancelled'];
 
 class HttpError extends Error {
   constructor(
@@ -51,6 +62,8 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
 export function createMockServer(opts: MockServerOptions) {
   const port = new MockBehtafoodPort(opts.clock);
   const agent = new Agent({ port, model: opts.model, clock: opts.clock });
+  const stageClock = new StageClock();
+  const now = opts.clock ?? Date.now;
 
   const server = createServer(async (req, res) => {
     // Permissive CORS: this server only ever serves fake data (for the web demo).
@@ -103,6 +116,28 @@ export function createMockServer(opts: MockServerOptions) {
         const body = await readJson(req);
         if (typeof body.proposalId !== 'string') throw new HttpError(400, 'proposalId is required');
         return sendJson(res, 200, { cancelled: agent.proposals.cancel(ctx, body.proposalId) });
+      }
+
+      // Order tracking: the backend's status plus any delay. No model call.
+      const status = url.pathname.match(/^\/api\/agent\/orders\/([\w-]+)\/status$/);
+      if (req.method === 'GET' && status) {
+        try {
+          const info = await port.getOrderStatus(ctx, status[1]!);
+          const snap = trackingSnapshot(info, stageClock, delayThresholdsFromEnv(process.env), now());
+          return sendJson(res, 200, { ...snap, modelCalls: agent.usage.report(customer.id).modelCalls });
+        } catch (err) {
+          if (err instanceof PortError) throw new HttpError(404, 'Order not found');
+          throw err;
+        }
+      }
+
+      // A fixed, polite reminder to the restaurant or rider, at the customer's request.
+      if (req.method === 'POST' && url.pathname === '/api/agent/nudge') {
+        const body = await readJson(req);
+        const party = body.party as NudgeParty;
+        if (typeof body.orderId !== 'string' || (party !== 'vendor' && party !== 'rider')) throw new HttpError(400, 'orderId and party are required');
+        const r = await agent.nudges.nudge(ctx, { orderId: body.orderId, party, customerConfirmed: true });
+        return sendJson(res, 200, { sent: r.sent, ...(r.sent ? {} : { code: r.code }), text: nudgeResultText(party, r) });
       }
 
       if (req.method === 'GET' && url.pathname === '/api/agent/usage') {

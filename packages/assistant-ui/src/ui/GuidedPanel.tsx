@@ -10,6 +10,8 @@ import { latestChoicePrompt, timelineRows } from '../logic/conversation';
 import type { AssistantController } from '../logic/controller';
 import { choicesText, plainReply } from '../logic/format';
 import { guidedLayout, type GuideMode, type GuideSession } from '../logic/guidedMode';
+import { latestTrackingLabel, openDelay } from '../logic/tracking';
+import { TrackingCard } from './TrackingCard';
 import { ApprovalCard } from './ApprovalCard';
 import { ChoiceChips } from './Cards';
 import { useAssistantState, useNow } from './hooks';
@@ -40,6 +42,10 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
   const turn = state.turns.at(-1);
   const prompt = latestChoicePrompt(state);
   const lastCart = turn?.carts.at(-1);
+  // The order being tracked (the latest placed one). Tracking never moves screens:
+  // the real tracking screen stays open beneath the bar.
+  const placedIds = (turn?.proposalIds ?? []).map((id) => state.cards[id]?.order?.orderId).filter((x): x is string => !!x);
+  const track = placedIds.length ? state.tracking[placedIds.at(-1)!] : undefined;
 
   // A new message collapses a manually expanded sheet back to the bar.
   useEffect(() => controller.onActivity((a) => a.type === 'turn_started' && setExpanded(false)), [controller]);
@@ -51,7 +57,9 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
       ? "Paused: you're in control."
       : status === 'stopped'
         ? "Stopped. Screens won't move until your next message."
-        : session.current?.label ?? (working ? 'Working…' : 'Ask me for food and a budget.');
+        : track && !working
+          ? openDelay(track)?.message ?? latestTrackingLabel(track)
+          : session.current?.label ?? (working ? 'Working…' : 'Ask me for food and a budget.');
 
   const send = (text: string) => {
     if (!text.trim() || state.busy) return;
@@ -148,6 +156,7 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
                   );
                 })}
                 {prompt ? <ChoiceChips prompt={prompt} disabled={state.busy} onPick={(o) => void controller.pickChoice(o)} /> : null}
+                {track ? <TrackingCard tracking={track} onRemind={(p) => void controller.remind(track.orderId, p)} /> : null}
                 {turn && timelineRows(turn, state.cards, now).some((r) => r.status === 'failed') ? (
                   <Text style={[styles.hint, { fontFamily: fonts.regular, color: colors.greyMedium }]}>Switch to Chat to see every step.</Text>
                 ) : null}

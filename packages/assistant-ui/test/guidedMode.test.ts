@@ -7,6 +7,7 @@ import { GuideSession, guidedLayout, initialGuideMode, type GuideMode } from '..
 import type { GuideAction } from '../src/logic/guide';
 import { applyRunEvents, initialState, startTurn, turnAccepted } from '../src/logic/conversation';
 import { approveResolved, approveStarted } from '../src/logic/approval';
+import { applySnapshot, newTracking } from '../src/logic/tracking';
 import { NOW, PLACED, ev, happyRun, resetSeq } from './fixtures';
 
 beforeEach(resetSeq);
@@ -244,28 +245,38 @@ describe('pacing: one step on screen at a time', () => {
 describe('bar or sheet', () => {
   test('a small bar while the assistant works; a sheet when it needs the customer', () => {
     let s = startTurn(initialState(), 't1', 'rice');
-    assert.equal(guidedLayout({ ...s, busy: true }, NOW), 'bar');
+    assert.equal(guidedLayout({ ...s, busy: true, tracking: {} }, NOW), 'bar');
     s = turnAccepted(s, 't1', { runId: 'r', sessionId: null });
     const run = happyRun();
     s = applyRunEvents(s, 't1', run.slice(0, 4), false);
-    assert.equal(guidedLayout({ ...s, busy: true }, NOW), 'bar');
+    assert.equal(guidedLayout({ ...s, busy: true, tracking: {} }, NOW), 'bar');
     s = applyRunEvents(s, 't1', run.slice(4, 7), false);
-    assert.equal(guidedLayout({ ...s, busy: true }, NOW), 'sheet', 'the approval card expands the panel at once, mid-run');
+    assert.equal(guidedLayout({ ...s, busy: true, tracking: {} }, NOW), 'sheet', 'the approval card expands the panel at once, mid-run');
     s = applyRunEvents(s, 't1', run.slice(7), true);
-    assert.equal(guidedLayout({ ...s, busy: false }, NOW), 'sheet', 'approval card waiting');
+    assert.equal(guidedLayout({ ...s, busy: false, tracking: {} }, NOW), 'sheet', 'approval card waiting');
   });
 
   test('a question or choice expands to the sheet; nothing asked yet also shows the sheet', () => {
-    assert.equal(guidedLayout({ ...initialState(), busy: false }, NOW), 'sheet');
+    assert.equal(guidedLayout({ ...initialState(), busy: false, tracking: {} }, NOW), 'sheet');
     let s = turnAccepted(startTurn(initialState(), 't1', 'jollof'), 't1', { runId: 'r', sessionId: null });
     s = applyRunEvents(s, 't1', [ev({ type: 'reply', text: 'Which protein?' }), ev({ type: 'done', modelCalls: 1, costUsd: 0 })], true);
-    assert.equal(guidedLayout({ ...s, busy: false }, NOW), 'sheet');
+    assert.equal(guidedLayout({ ...s, busy: false, tracking: {} }, NOW), 'sheet');
   });
 
   test('after the order is placed, the bar shows while the tracking screen is visible', () => {
     let s = turnAccepted(startTurn(initialState(), 't1', 'order'), 't1', { runId: 'r', sessionId: null });
     s = applyRunEvents(s, 't1', happyRun(), true);
     s = { ...s, cards: { prop_1: approveResolved(approveStarted(s.cards.prop_1!), PLACED) } };
-    assert.equal(guidedLayout({ ...s, busy: false }, NOW), 'bar');
+    assert.equal(guidedLayout({ ...s, busy: false, tracking: {} }, NOW), 'bar');
+  });
+
+  test('T6: a delay with reminder buttons expands the sheet over the tracking screen', () => {
+    let s = turnAccepted(startTurn(initialState(), 't1', 'order'), 't1', { runId: 'r', sessionId: null });
+    s = applyRunEvents(s, 't1', happyRun(), true);
+    s = { ...s, cards: { prop_1: approveResolved(approveStarted(s.cards.prop_1!), PLACED) } };
+    let t = applySnapshot(newTracking('ord_9', 'ORD-ABC-123'), { orderId: 'ord_9', reference: 'ORD-ABC-123', status: 'ready', riderAssigned: false, updatedAt: '', stageSince: '', delay: null, modelCalls: 0 }, NOW);
+    assert.equal(guidedLayout({ ...s, busy: false, tracking: { ord_9: t } }, NOW), 'bar');
+    t = applySnapshot(t, { orderId: 'ord_9', reference: 'ORD-ABC-123', status: 'ready', riderAssigned: false, updatedAt: '', stageSince: '', delay: { kind: 'no_rider', parties: ['vendor'], elapsedMs: 1, message: 'm' }, modelCalls: 0 }, NOW);
+    assert.equal(guidedLayout({ ...s, busy: false, tracking: { ord_9: t } }, NOW), 'sheet');
   });
 });

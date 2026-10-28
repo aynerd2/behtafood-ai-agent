@@ -17,6 +17,7 @@
 import type { ApprovalCardState } from './approval';
 import type { AssistantState } from './controller';
 import type { GuideAction } from './guide';
+import { openDelay } from './tracking';
 
 export type GuideMode = 'chat' | 'guided';
 export type GuideStatus = 'chat' | 'closed' | 'stopped' | 'paused' | 'navigating';
@@ -197,6 +198,8 @@ export function guidedLayout(state: AssistantState, _now: number): 'bar' | 'shee
   const turn = state.turns.at(-1);
   if (!turn) return 'sheet';
   if (turn.proposalIds.some((id) => NEEDS_CUSTOMER.has(state.cards[id]?.status ?? 'placed'))) return 'sheet';
+  // A delay with reminder buttons is a question for the customer.
+  if (Object.values(state.tracking ?? {}).some((t) => openDelay(t))) return 'sheet';
   if (state.busy) return 'bar';
   if (turn.proposalIds.some((id) => SETTLED.has(state.cards[id]?.status ?? 'awaiting'))) return 'bar';
   return 'sheet';

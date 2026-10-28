@@ -87,7 +87,9 @@ export type OrderStatus =
   | 'pending'
   | 'accepted'
   | 'preparing'
+  | 'ready'
   | 'rider_assigned'
+  | 'picked_up'
   | 'on_the_way'
   | 'delivered'
   | 'cancelled';

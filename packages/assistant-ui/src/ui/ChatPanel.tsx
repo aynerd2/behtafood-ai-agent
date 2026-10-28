@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { latestChoicePrompt, timelineRows, type Turn } from '../logic/conversation';
 import type { ApprovalCardState } from '../logic/approval';
+import type { TrackingState } from '../logic/tracking';
+import { TrackingCard } from './TrackingCard';
 import type { AssistantController } from '../logic/controller';
 import { plainReply } from '../logic/format';
 import type { GuideMode } from '../logic/guidedMode';
@@ -90,7 +92,7 @@ export function ChatPanel({ controller, onClose, onOpenOrder, title = 'Behtafood
         ) : null}
 
         {state.turns.map((t) => (
-          <TurnView key={t.id} turn={t} cards={state.cards} controller={controller} now={now} onOpenOrder={onOpenOrder} />
+          <TurnView key={t.id} turn={t} cards={state.cards} tracking={state.tracking} controller={controller} now={now} onOpenOrder={onOpenOrder} />
         ))}
 
         {prompt ? <ChoiceChips prompt={prompt} disabled={state.busy} onPick={(o) => void controller.pickChoice(o)} /> : null}
@@ -125,12 +127,13 @@ export function ChatPanel({ controller, onClose, onOpenOrder, title = 'Behtafood
 interface TurnViewProps {
   turn: Turn;
   cards: Record<string, ApprovalCardState>;
+  tracking: Record<string, TrackingState>;
   controller: AssistantController;
   now: number;
   onOpenOrder?: (orderId: string) => void;
 }
 
-function TurnView({ turn, cards, controller, now, onOpenOrder }: TurnViewProps) {
+function TurnView({ turn, cards, tracking, controller, now, onOpenOrder }: TurnViewProps) {
   const { colors, fonts } = useAssistantTheme();
   return (
     <View style={styles.turn}>
@@ -145,16 +148,19 @@ function TurnView({ turn, cards, controller, now, onOpenOrder }: TurnViewProps) 
       {turn.proposalIds.map((id) => {
         const card = cards[id];
         if (!card) return null;
+        const track = card.order ? tracking[card.order.orderId] : undefined;
         return (
-          <ApprovalCard
-            key={id}
-            card={card}
-            now={now}
-            onApprove={() => void controller.approve(id)}
-            onCancel={() => void controller.cancel(id)}
-            onAskAgain={() => void controller.askAgain(id)}
-            onOpenOrder={onOpenOrder}
-          />
+          <View key={id}>
+            <ApprovalCard
+              card={card}
+              now={now}
+              onApprove={() => void controller.approve(id)}
+              onCancel={() => void controller.cancel(id)}
+              onAskAgain={() => void controller.askAgain(id)}
+              onOpenOrder={onOpenOrder}
+            />
+            {track ? <TrackingCard tracking={track} onRemind={(p) => void controller.remind(track.orderId, p)} /> : null}
+          </View>
         );
       })}
       {turn.reply ? (

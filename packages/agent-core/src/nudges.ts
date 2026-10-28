@@ -1,18 +1,22 @@
 // Templated nudges to the vendor or rider of the customer's own active order.
-// Fixed text only (the model never writes the message), no ETA promises,
-// at most 1 per party per 10 minutes and 2 per order, and every attempt logged.
+// Fixed, polite text only (the model never writes the message): no pressure,
+// no times, no ETA promises. At most 1 per party per 10 minutes and 2 per
+// order, and every attempt is logged with who, when and the result.
+//
+// Results are reported honestly: a reminder is "sent" (handed to the push
+// service) or "couldn't send". Nothing here can know it was delivered or read.
 
 import { FINAL_ORDER_STATUSES, PortError, type BehtafoodPort, type CustomerContext, type NudgeParty } from './port';
 
 export const NUDGE_TEMPLATES: Record<NudgeParty, string> = {
-  vendor: 'Behtafood: the customer is checking on order {reference}. Please update its status in your app.',
-  rider: 'Behtafood: the customer is checking on order {reference}. Please update your delivery status in your app.',
+  vendor: 'Hello from Behtafood. The customer is checking on order {reference}. When you can, please update its status in your app. Thank you.',
+  rider: 'Hello from Behtafood. The customer is checking on order {reference}. When it is safe, please update the delivery status in your app. Thank you.',
 };
 
 export const NUDGE_PARTY_COOLDOWN_MS = 10 * 60 * 1000;
 export const NUDGE_MAX_PER_ORDER = 2;
 
-export type NudgeRefusal = 'NOT_CONFIRMED' | 'NOT_FOUND' | 'NOT_ACTIVE' | 'NO_RIDER' | 'COOLDOWN' | 'ORDER_LIMIT';
+export type NudgeRefusal = 'NOT_CONFIRMED' | 'NOT_FOUND' | 'NOT_ACTIVE' | 'NO_RIDER' | 'COOLDOWN' | 'ORDER_LIMIT' | 'SEND_FAILED';
 
 export type NudgeResult = { sent: true; message: string } | { sent: false; code: NudgeRefusal; message: string };
 
@@ -31,7 +35,31 @@ const REFUSAL_TEXT: Record<NudgeRefusal, string> = {
   NO_RIDER: 'No rider is assigned yet.',
   COOLDOWN: 'Already nudged in the last 10 minutes.',
   ORDER_LIMIT: 'This order has had the maximum of 2 nudges.',
+  SEND_FAILED: 'The reminder could not be sent.',
 };
+
+const PARTY_NAME: Record<NudgeParty, string> = { vendor: 'the restaurant', rider: 'the rider' };
+
+/** What the customer is told. Never "delivered" or "read": we cannot know that. */
+export function nudgeResultText(party: NudgeParty, r: NudgeResult): string {
+  if (r.sent) return `Reminder sent to ${PARTY_NAME[party]}.`;
+  switch (r.code) {
+    case 'SEND_FAILED':
+      return "Couldn't send the reminder. Please try again later.";
+    case 'COOLDOWN':
+      return `You reminded ${PARTY_NAME[party]} less than 10 minutes ago. Please wait a little before reminding again.`;
+    case 'ORDER_LIMIT':
+      return 'This order has had 2 reminders, the most we send.';
+    case 'NO_RIDER':
+      return 'No rider is assigned yet, so there is no rider to remind.';
+    case 'NOT_ACTIVE':
+      return 'This order is finished, so no reminder is needed.';
+    case 'NOT_FOUND':
+      return "We couldn't find this order on your account.";
+    case 'NOT_CONFIRMED':
+      return 'Reminders are only sent when you ask for one.';
+  }
+}
 
 export class NudgeService {
   readonly log: NudgeLogEntry[] = [];
@@ -40,6 +68,11 @@ export class NudgeService {
     readonly port: BehtafoodPort,
     readonly clock: () => number = Date.now,
   ) {}
+
+  /** The fixed explanation for a refusal (what the model is told). */
+  refusalText(code: NudgeRefusal): string {
+    return REFUSAL_TEXT[code];
+  }
 
   async nudge(ctx: CustomerContext, req: { orderId: string; party: NudgeParty; customerConfirmed: boolean }): Promise<NudgeResult> {
     const outcome = await this.#decide(ctx, req);
@@ -67,7 +100,12 @@ export class NudgeService {
     if (lastSame && this.clock() - Date.parse(lastSame.at) < NUDGE_PARTY_COOLDOWN_MS) return refuse('COOLDOWN');
 
     const message = NUDGE_TEMPLATES[req.party].replace('{reference}', status.reference);
-    await this.port.sendNudge(ctx, { orderId: req.orderId, party: req.party, message });
+    try {
+      await this.port.sendNudge(ctx, { orderId: req.orderId, party: req.party, message });
+    } catch {
+      // Logged by nudge(); a failed send does not count towards the limits.
+      return refuse('SEND_FAILED');
+    }
     return { sent: true, message };
   }
 }

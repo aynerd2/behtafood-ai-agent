@@ -28,6 +28,15 @@ import {
   type ConversationState,
 } from './conversation';
 import type { PlacedOrder, StoredEvent } from './types';
+import {
+  applySnapshot,
+  newTracking,
+  reminderFailed,
+  reminderResolved,
+  reminderStarted,
+  type ReminderParty,
+  type TrackingState,
+} from './tracking';
 
 /**
  * What happened, for guided mode: each new server event exactly once, each
@@ -41,6 +50,8 @@ export type AssistantActivity =
 export interface AssistantState extends ConversationState {
   /** A message is being answered; sending is disabled. */
   busy: boolean;
+  /** Placed orders being tracked, by order id. No model calls. */
+  tracking: Record<string, TrackingState>;
 }
 
 export interface ControllerOptions {
@@ -52,13 +63,17 @@ export interface ControllerOptions {
   maxPollMs?: number;
   /** Consecutive failed polls before the turn is shown as failed. */
   maxPollErrors?: number;
+  /** How often a placed order's status is checked (default 5 s). */
+  trackIntervalMs?: number;
+  /** Stop tracking after this long (default 3 hours). */
+  maxTrackMs?: number;
 }
 
 const LOST_CONNECTION = 'Lost connection to the assistant. Check your internet and try again.';
 const TOO_SLOW = 'The assistant is taking too long. Please try again.';
 
 export class AssistantController {
-  #state: AssistantState = { ...initialState(), busy: false };
+  #state: AssistantState = { ...initialState(), busy: false, tracking: {} };
   readonly #listeners = new Set<() => void>();
   readonly #client: AgentClient;
   readonly #sleep: (ms: number) => Promise<void>;
@@ -68,6 +83,9 @@ export class AssistantController {
   readonly #maxPollErrors: number;
   #turnSeq = 0;
   #disposed = false;
+  readonly #trackInterval: number;
+  readonly #maxTrackMs: number;
+  readonly #trackers = new Map<string, Promise<void>>();
   readonly #activity = new Set<(a: AssistantActivity) => void>();
 
   constructor(opts: ControllerOptions) {
@@ -77,6 +95,8 @@ export class AssistantController {
     this.#interval = opts.pollIntervalMs ?? 1000;
     this.#maxPollMs = opts.maxPollMs ?? 3 * 60_000;
     this.#maxPollErrors = opts.maxPollErrors ?? 5;
+    this.#trackInterval = opts.trackIntervalMs ?? 5000;
+    this.#maxTrackMs = opts.maxTrackMs ?? 3 * 60 * 60_000;
   }
 
   getState = (): AssistantState => this.#state;
@@ -113,7 +133,62 @@ export class AssistantController {
   }
 
   #conv(fn: (s: ConversationState) => ConversationState): void {
-    this.#set((s) => ({ ...fn(s), busy: s.busy }));
+    this.#set((s) => ({ ...fn(s), busy: s.busy, tracking: s.tracking }));
+  }
+
+  #setTracking(orderId: string, fn: (t: TrackingState) => TrackingState): void {
+    this.#set((s) => {
+      const t = s.tracking[orderId];
+      return t ? { ...s, tracking: { ...s.tracking, [orderId]: fn(t) } } : s;
+    });
+  }
+
+  /** Starts following a placed order (once per order). */
+  #track(order: PlacedOrder): void {
+    if (this.#trackers.has(order.orderId)) return;
+    this.#set((s) => ({ ...s, tracking: { ...s.tracking, [order.orderId]: newTracking(order.orderId, order.reference) } }));
+    this.#trackers.set(order.orderId, this.#trackLoop(order.orderId));
+  }
+
+  async #trackLoop(orderId: string): Promise<void> {
+    const started = this.#now();
+    let errors = 0;
+    for (;;) {
+      if (this.#disposed) return;
+      try {
+        const snap = await this.#client.orderStatus(orderId);
+        errors = 0;
+        this.#setTracking(orderId, (t) => applySnapshot(t, snap, this.#now()));
+        if (this.#state.tracking[orderId]?.finished) return;
+      } catch (err) {
+        errors += 1;
+        const fatal = err instanceof AgentApiError && (err.kind === 'signed_out' || err.kind === 'unavailable');
+        if (fatal || errors > 20) {
+          this.#setTracking(orderId, (t) => ({ ...t, error: fatal ? (err as AgentApiError).message : 'Lost connection to order updates. Open the order from My Orders.' }));
+          return;
+        }
+      }
+      if (this.#now() - started >= this.#maxTrackMs) return;
+      await this.#sleep(this.#trackInterval);
+    }
+  }
+
+  /** Resolves when tracking of this order stops (for tests and cleanup). */
+  trackingDone(orderId: string): Promise<void> {
+    return this.#trackers.get(orderId) ?? Promise.resolve();
+  }
+
+  /** A reminder button: a fixed, polite message to the restaurant or rider. */
+  async remind(orderId: string, party: ReminderParty): Promise<void> {
+    const t = this.#state.tracking[orderId];
+    if (!t || t.sending || t.finished) return;
+    this.#setTracking(orderId, (x) => reminderStarted(x, party));
+    try {
+      const r = await this.#client.nudge(orderId, party);
+      this.#setTracking(orderId, (x) => reminderResolved(x, party, r, this.#now()));
+    } catch (err) {
+      this.#setTracking(orderId, (x) => reminderFailed(x, party, err, this.#now()));
+    }
   }
 
   #setCard(id: string, fn: (c: ApprovalCardState) => ApprovalCardState): void {
@@ -127,7 +202,7 @@ export class AssistantController {
     const clean = text.trim();
     if (!clean || this.#state.busy) return;
     const turnId = `turn_${++this.#turnSeq}`;
-    this.#set((s) => ({ ...startTurn(s, turnId, clean), busy: true }));
+    this.#set((s) => ({ ...startTurn(s, turnId, clean), busy: true, tracking: s.tracking }));
     this.#emit({ type: 'turn_started', turnId });
     try {
       let runId: string;
@@ -181,7 +256,10 @@ export class AssistantController {
     try {
       const result = await this.#client.approve(proposalId);
       this.#setCard(proposalId, (c) => approveResolved(c, result));
-      if (result.status === 'placed') this.#emit({ type: 'placed', proposalId, order: result.order });
+      if (result.status === 'placed') {
+        this.#emit({ type: 'placed', proposalId, order: result.order });
+        this.#track(result.order);
+      }
     } catch (err) {
       this.#setCard(proposalId, (c) => approveFailed(c, err));
     }
@@ -211,7 +289,10 @@ export class AssistantController {
     try {
       const r = await this.#client.check(proposalId);
       this.#setCard(proposalId, (c) => checkResolved(c, r));
-      if (r.status === 'placed') this.#emit({ type: 'placed', proposalId, order: r.order });
+      if (r.status === 'placed') {
+        this.#emit({ type: 'placed', proposalId, order: r.order });
+        this.#track(r.order);
+      }
       if (r.status !== 'not_placed') return;
     } catch (err) {
       this.#setCard(proposalId, (c) => checkFailed(c, err));

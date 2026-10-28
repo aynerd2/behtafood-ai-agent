@@ -6,7 +6,10 @@
 //   POST {api}/agent/approve                -> ApproveResult
 //   POST {api}/agent/check                  -> CheckResult (read-only)
 //   POST {api}/agent/cancel                 -> { cancelled }
+//   GET  {api}/agent/orders/:id/status      -> TrackingSnapshot (no model call)
+//   POST {api}/agent/nudge                  -> ReminderResult
 
+import type { ReminderParty, ReminderResult, TrackingSnapshot } from './tracking';
 import type { ApproveResult, CheckResult, StoredEvent } from './types';
 
 export type AgentApiErrorKind = 'signed_out' | 'unavailable' | 'rate_limited' | 'network' | 'server' | 'bad_request';
@@ -29,6 +32,10 @@ export interface AgentClient {
   cancel(proposalId: string): Promise<{ cancelled: boolean }>;
   /** Is there an order for this proposal? Places nothing. */
   check(proposalId: string): Promise<CheckResult>;
+  /** The backend's status for a placed order, plus any delay. No model call. */
+  orderStatus(orderId: string): Promise<TrackingSnapshot>;
+  /** A fixed, polite reminder to the restaurant or rider. */
+  nudge(orderId: string, party: ReminderParty): Promise<ReminderResult>;
 }
 
 export interface AgentClientOptions {
@@ -97,5 +104,7 @@ export function createAgentClient(opts: AgentClientOptions): AgentClient {
     approve: (proposalId) => request('POST', '/approve', { proposalId }),
     cancel: (proposalId) => request('POST', '/cancel', { proposalId }),
     check: (proposalId) => request('POST', '/check', { proposalId }),
+    orderStatus: (orderId) => request('GET', `/orders/${encodeURIComponent(orderId)}/status`),
+    nudge: (orderId, party) => request('POST', '/nudge', { orderId, party }),
   };
 }

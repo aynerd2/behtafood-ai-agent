@@ -51,6 +51,8 @@ export class MockBehtafoodPort implements BehtafoodPort {
   nextPlaceOrderFault: PlaceOrderFault | null = null;
   /** Test hook: this many next findOrderByCheckoutSession calls throw (lookup outage). */
   failLookups = 0;
+  /** Test hook: sendNudge fails (push service down). */
+  failNudges = false;
   #seq = 0;
 
   constructor(readonly clock: () => number = Date.now) {}
@@ -82,7 +84,7 @@ export class MockBehtafoodPort implements BehtafoodPort {
     if (!o) throw new Error(`no order ${orderId}`);
     o.status = status;
     o.updatedAt = this.#now();
-    if (status === 'rider_assigned' || status === 'on_the_way' || status === 'delivered') o.riderAssigned = true;
+    if (status === 'rider_assigned' || status === 'picked_up' || status === 'on_the_way' || status === 'delivered') o.riderAssigned = true;
   }
 
   // ---- BehtafoodPort ----
@@ -233,6 +235,7 @@ export class MockBehtafoodPort implements BehtafoodPort {
 
   async sendNudge(ctx: CustomerContext, req: { orderId: string; party: NudgeParty; message: string }): Promise<void> {
     await this.getOrderStatus(ctx, req.orderId); // ownership check
+    if (this.failNudges) throw new Error('push service unavailable');
     this.nudges.push({ ...req, at: this.#now() });
   }
 

@@ -44,6 +44,19 @@ class FakeClient implements AgentClient {
     this.cancels.push(id);
     return { cancelled: true };
   }
+  statusPolls: string[] = [];
+  statuses: (Record<string, unknown> | AgentApiError)[] = [];
+  nudges: { orderId: string; party: string }[] = [];
+  async orderStatus(orderId: string) {
+    this.statusPolls.push(orderId);
+    const s = this.statuses.shift() ?? { status: 'delivered' };
+    if (s instanceof AgentApiError) throw s;
+    return { orderId, reference: 'ORD-ABC-123', riderAssigned: false, updatedAt: '', stageSince: '', delay: null, modelCalls: 6, ...s } as any;
+  }
+  async nudge(orderId: string, party: 'vendor' | 'rider') {
+    this.nudges.push({ orderId, party });
+    return { sent: true, text: party === 'vendor' ? 'Reminder sent to the restaurant.' : 'Reminder sent to the rider.' };
+  }
   async check(id: string) {
     this.checks.push(id);
     const r = this.checkResults.shift() ?? { status: 'not_placed' as const };
@@ -199,6 +212,32 @@ describe('AssistantController', () => {
     await c.send('order');
     await c.approve('prop_1');
     assert.deepEqual(seen, ['turn_started', ...run.map((e) => `event:${e.seq}`), 'placed']);
+  });
+
+  test('T6: after an order is placed, tracking polls the status endpoint (no chat, no model) until delivered', async () => {
+    const { client, c } = setup();
+    client.batches = [happyRun()];
+    await c.send('order');
+    const chats = client.chats.length;
+    client.statuses = [{ status: 'preparing' }, { status: 'ready' }, { status: 'ready' }, { status: 'on_the_way', riderAssigned: true }, { status: 'delivered', riderAssigned: true }];
+    await c.approve('prop_1');
+    await c.trackingDone('ord_9');
+    const t = c.getState().tracking.ord_9!;
+    assert.deepEqual(t.steps.map((s) => s.stage), ['preparing', 'ready', 'on_the_way', 'delivered']);
+    assert.equal(t.finished, true);
+    assert.equal(client.statusPolls.length, 5);
+    assert.equal(client.chats.length, chats, 'no chat message, so no model call');
+  });
+
+  test('T6: a reminder button calls the nudge endpoint and records the honest result', async () => {
+    const { client, c } = setup();
+    client.batches = [happyRun()];
+    await c.send('order');
+    client.statuses = [{ status: 'ready', delay: { kind: 'no_rider', parties: ['vendor'], elapsedMs: 1, message: 'Your food has been ready for 11 minutes and no rider has been assigned yet. Would you like to send a polite reminder?' } }, { status: 'delivered' }];
+    await c.approve('prop_1');
+    await c.remind('ord_9', 'vendor');
+    assert.deepEqual(client.nudges, [{ orderId: 'ord_9', party: 'vendor' }]);
+    assert.equal(c.getState().tracking.ord_9!.reminders[0]!.text, 'Reminder sent to the restaurant.');
   });
 
   test('cancel calls the server and marks the card', async () => {
