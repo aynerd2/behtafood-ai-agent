@@ -10,6 +10,8 @@ import { latestChoicePrompt, timelineRows, type Turn } from '../logic/conversati
 import type { ApprovalCardState } from '../logic/approval';
 import type { AssistantController } from '../logic/controller';
 import { plainReply } from '../logic/format';
+import type { GuideMode } from '../logic/guidedMode';
+import { ModeToggle } from './ModeToggle';
 import { ActionTimeline } from './ActionTimeline';
 import { ApprovalCard } from './ApprovalCard';
 import { CartCard, ChoiceChips, RestaurantCards } from './Cards';
@@ -27,9 +29,12 @@ export interface ChatPanelProps {
   onClose: () => void;
   onOpenOrder?: (orderId: string) => void;
   title?: string;
+  /** When given, the header shows the Chat | Guided switch. */
+  mode?: GuideMode;
+  onModeChange?: (mode: GuideMode) => void;
 }
 
-export function ChatPanel({ controller, onClose, onOpenOrder, title = 'Behtafood Assistant' }: ChatPanelProps) {
+export function ChatPanel({ controller, onClose, onOpenOrder, title = 'Behtafood Assistant', mode, onModeChange }: ChatPanelProps) {
   const { colors, fonts } = useAssistantTheme();
   const insets = useSafeAreaInsets();
   const state = useAssistantState(controller);
@@ -57,6 +62,7 @@ export function ChatPanel({ controller, onClose, onOpenOrder, title = 'Behtafood
       <View style={[styles.header, { borderBottomColor: colors.greyLight }]}>
         <Ionicons name="sparkles" size={18} color={colors.primary} />
         <Text style={[styles.headerTitle, { fontFamily: fonts.bold, color: colors.black }]}>{title}</Text>
+        {mode && onModeChange ? <ModeToggle mode={mode} onChange={onModeChange} /> : null}
         <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close the assistant" hitSlop={12}>
           <Ionicons name="close" size={24} color={colors.greyDark} />
         </Pressable>

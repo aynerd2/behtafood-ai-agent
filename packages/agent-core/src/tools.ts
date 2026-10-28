@@ -310,7 +310,10 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
       const cartId = `cart_${++state.cartSeq}`;
       state.carts.set(cartId, { restaurantId, lines: cartLines });
       const summary = cartLines.map((l) => ({ name: menu.find((m) => m.id === l.itemId)!.name, quantity: l.quantity, ...(l.choices ? { choices: l.choices } : {}) }));
-      return { ok: true, label: 'Built cart', result: { cart_id: cartId, items: summary }, data: { cartId, items: summary } };
+      // Display data for the app (guided mode shows the real dish): ids added
+      // here only; the model's own result stays the short summary.
+      const display = cartLines.map((l, i) => ({ itemId: l.itemId, ...summary[i]! }));
+      return { ok: true, label: 'Built cart', result: { cart_id: cartId, items: summary }, data: { cartId, restaurantId, items: display } };
     }
     case 'quote_order': {
       const cartId = str(args, 'cart_id');

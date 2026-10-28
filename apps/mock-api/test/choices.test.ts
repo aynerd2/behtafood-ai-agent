@@ -53,6 +53,28 @@ describe('timeline data for the app (display only)', () => {
   });
 });
 
+describe('timeline data for guided mode (display only)', () => {
+  test('a built cart names its restaurant and each dish id, so the app can show the real menu item', async () => {
+    const { send } = harness({
+      model: sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_wrap', items: [{ item_id: 'itm_shawarma', quantity: 2, choices: [{ group: 'Size', option: 'Jumbo' }] }, { item_id: 'itm_zobo', quantity: 1 }] })] }]),
+    });
+    const step = lastStep((await send('2 jumbo shawarma and a zobo')).events);
+    assert.equal(step.status, 'done');
+    assert.equal(step.data.restaurantId, 'rst_wrap');
+    assert.deepEqual(step.data.items, [
+      { itemId: 'itm_shawarma', name: 'Chicken shawarma', quantity: 2, choices: [{ group: 'Size', option: 'Jumbo' }] },
+      { itemId: 'itm_zobo', name: 'Zobo drink', quantity: 1 },
+    ]);
+  });
+
+  test('the model still sees the same short cart summary (no ids added to its view)', async () => {
+    const h = harness({ model: sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_wrap', items: [{ item_id: 'itm_zobo', quantity: 1 }] })] }]) });
+    await h.send('zobo');
+    const result = JSON.parse(String((h.agent as any).model.requests[1].messages.at(-1).content));
+    assert.deepEqual(result, { cart_id: 'cart_1', items: [{ name: 'Zobo drink', quantity: 1 }] });
+  });
+});
+
 describe('build_cart with choices', () => {
   const cartCall = (items: unknown[]) => sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_wrap', items })] }]);
 

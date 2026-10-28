@@ -190,6 +190,17 @@ describe('AssistantController', () => {
     });
   });
 
+  test('activity: guided mode hears each new event once (no repeats across polls), new runs and placed orders', async () => {
+    const { client, c } = setup();
+    const run = happyRun();
+    client.batches = [run.slice(0, 3), run.slice(3)];
+    const seen: string[] = [];
+    c.onActivity((a) => seen.push(a.type === 'event' ? `event:${a.event.seq}` : a.type));
+    await c.send('order');
+    await c.approve('prop_1');
+    assert.deepEqual(seen, ['turn_started', ...run.map((e) => `event:${e.seq}`), 'placed']);
+  });
+
   test('cancel calls the server and marks the card', async () => {
     const { client, c } = setup();
     client.batches = [happyRun()];

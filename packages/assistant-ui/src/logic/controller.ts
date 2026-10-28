@@ -27,6 +27,16 @@ import {
   turnFailed,
   type ConversationState,
 } from './conversation';
+import type { PlacedOrder, StoredEvent } from './types';
+
+/**
+ * What happened, for guided mode: each new server event exactly once, each
+ * new message, and each order the server confirmed as placed.
+ */
+export type AssistantActivity =
+  | { type: 'turn_started'; turnId: string }
+  | { type: 'event'; turnId: string; event: StoredEvent }
+  | { type: 'placed'; proposalId: string; order: PlacedOrder };
 
 export interface AssistantState extends ConversationState {
   /** A message is being answered; sending is disabled. */
@@ -58,6 +68,7 @@ export class AssistantController {
   readonly #maxPollErrors: number;
   #turnSeq = 0;
   #disposed = false;
+  readonly #activity = new Set<(a: AssistantActivity) => void>();
 
   constructor(opts: ControllerOptions) {
     this.#client = opts.client;
@@ -69,6 +80,21 @@ export class AssistantController {
   }
 
   getState = (): AssistantState => this.#state;
+
+  onActivity(fn: (a: AssistantActivity) => void): () => void {
+    this.#activity.add(fn);
+    return () => this.#activity.delete(fn);
+  }
+
+  #emit(a: AssistantActivity): void {
+    for (const fn of this.#activity) {
+      try {
+        fn(a);
+      } catch {
+        // A listener (guided mode) must never break the conversation.
+      }
+    }
+  }
 
   subscribe = (fn: () => void): (() => void) => {
     this.#listeners.add(fn);
@@ -102,6 +128,7 @@ export class AssistantController {
     if (!clean || this.#state.busy) return;
     const turnId = `turn_${++this.#turnSeq}`;
     this.#set((s) => ({ ...startTurn(s, turnId, clean), busy: true }));
+    this.#emit({ type: 'turn_started', turnId });
     try {
       let runId: string;
       try {
@@ -128,7 +155,9 @@ export class AssistantController {
       try {
         const r = await this.#client.events(runId, after);
         errors = 0;
+        const fresh = (r.events ?? []).filter((e) => e.seq > after).sort((a, b) => a.seq - b.seq);
         this.#conv((s) => applyRunEvents(s, turnId, r.events ?? [], r.finished));
+        for (const event of fresh) this.#emit({ type: 'event', turnId, event });
         if (r.finished) return;
       } catch (err) {
         errors += 1;
@@ -152,6 +181,7 @@ export class AssistantController {
     try {
       const result = await this.#client.approve(proposalId);
       this.#setCard(proposalId, (c) => approveResolved(c, result));
+      if (result.status === 'placed') this.#emit({ type: 'placed', proposalId, order: result.order });
     } catch (err) {
       this.#setCard(proposalId, (c) => approveFailed(c, err));
     }
@@ -181,6 +211,7 @@ export class AssistantController {
     try {
       const r = await this.#client.check(proposalId);
       this.#setCard(proposalId, (c) => checkResolved(c, r));
+      if (r.status === 'placed') this.#emit({ type: 'placed', proposalId, order: r.order });
       if (r.status !== 'not_placed') return;
     } catch (err) {
       this.#setCard(proposalId, (c) => checkFailed(c, err));
