@@ -71,15 +71,19 @@ Each rule has a test; see [docs/safety.md](docs/safety.md).
 
 ## Languages
 
-Text only, measured on 10 prompts per language ([docs/languages.md](docs/languages.md)):
+The chat header has a **reply language** dropdown: Auto (match my message), English, Nigerian Pidgin, Yoruba, Hausa and Igbo. Yoruba, Hausa and Igbo are labelled **beta**. The choice is remembered on the phone and sent with every message as `language` (`auto`, `en`, `pcm`, `yo`, `ha` or `ig`); the server refuses any other code. Auto keeps the original prompt unchanged. Any other choice adds one instruction after it: write everything the customer reads in that language, keep restaurant and dish names, ₦ prices and order references exactly as in the data, use simple words, and keep every safety rule. Buttons and step names stay in English for now.
 
-| Language | Understood the request | Replied in the same language | Status |
-|---|---|---|---|
-| English | 10/10 | 10/10 | Tested |
-| Nigerian Pidgin | 10/10 | 9/10 | Tested |
-| Yoruba | 10/10 | 10/10 | Tested by us, not verified by native speakers |
-| Hausa | 10/10 | 10/10 | Tested by us, not verified by native speakers |
-| Igbo | 10/10 | 10/10 | Tested by us, not verified by native speakers |
+Text only. First table: 10 prompts per language, reply language matched to the customer's message. Second: 3 prompts per language (a budget, a required choice, an unavailable item) with the language picked in the dropdown and the customer writing in English. Details: [docs/languages.md](docs/languages.md).
+
+| Language | Understood the request (10) | Replied in the same language (10) | Followed the dropdown (3) | Status |
+|---|---|---|---|---|
+| English | 10/10 | 10/10 | 3/3 | Tested |
+| Nigerian Pidgin | 10/10 | 9/10 | 3/3 | Tested |
+| Yoruba | 10/10 | 10/10 | 3/3 | Beta: tested by us, not verified by native speakers |
+| Hausa | 10/10 | 10/10 | 3/3 | Beta: tested by us, not verified by native speakers |
+| Igbo | 10/10 | 10/10 | 3/3 | Beta: tested by us, not verified by native speakers |
+
+"Followed the dropdown" means the reply was in that language and kept names and prices as given. It says nothing about fluency. In the dropdown run, one Pidgin reply added a total wrong (the approval card always shows the server's real total), and an earlier version of the instruction made Hausa replies misspell words, which was then fixed.
 
 ## Cost
 

@@ -1,7 +1,7 @@
 // HTTP client for the agent endpoints. Every call carries the customer's own
 // login token; the app never holds any model key.
 //
-//   POST {api}/agent/chat                   -> { runId, sessionId }
+//   POST {api}/agent/chat                   -> { runId, sessionId }  (sends language)
 //   GET  {api}/agent/runs/:id/events?after=N -> { finished, events }
 //   POST {api}/agent/approve                -> ApproveResult
 //   POST {api}/agent/check                  -> CheckResult (read-only)
@@ -9,6 +9,7 @@
 //   GET  {api}/agent/orders/:id/status      -> TrackingSnapshot (no model call)
 //   POST {api}/agent/nudge                  -> ReminderResult
 
+import type { AssistantLanguage } from './language';
 import type { ReminderParty, ReminderResult, TrackingSnapshot } from './tracking';
 import type { ApproveResult, CheckResult, StoredEvent } from './types';
 
@@ -26,8 +27,11 @@ export class AgentApiError extends Error {
 }
 
 export interface AgentClient {
-  /** One message, optionally with one photo (a JPEG or PNG data URL, at most 1.5 MB). */
-  chat(text: string, sessionId?: string, imageDataUrl?: string): Promise<{ runId: string; sessionId: string | null }>;
+  /**
+   * One message, optionally with one photo (a JPEG or PNG data URL, at most
+   * 1.5 MB), in the chosen reply language (Auto when not given).
+   */
+  chat(text: string, sessionId?: string, imageDataUrl?: string, language?: AssistantLanguage): Promise<{ runId: string; sessionId: string | null }>;
   events(runId: string, after: number): Promise<{ finished: boolean; events: StoredEvent[] }>;
   approve(proposalId: string): Promise<ApproveResult>;
   cancel(proposalId: string): Promise<{ cancelled: boolean }>;
@@ -100,8 +104,13 @@ export function createAgentClient(opts: AgentClientOptions): AgentClient {
   }
 
   return {
-    chat: (text, sessionId, imageDataUrl) =>
-      request('POST', '/chat', { text, ...(sessionId ? { sessionId } : {}), ...(imageDataUrl ? { imageDataUrl } : {}) }),
+    chat: (text, sessionId, imageDataUrl, language) =>
+      request('POST', '/chat', {
+        text,
+        ...(sessionId ? { sessionId } : {}),
+        ...(imageDataUrl ? { imageDataUrl } : {}),
+        language: language ?? 'auto',
+      }),
     events: (runId, after) => request('GET', `/runs/${encodeURIComponent(runId)}/events?after=${after}`),
     approve: (proposalId) => request('POST', '/approve', { proposalId }),
     cancel: (proposalId) => request('POST', '/cancel', { proposalId }),

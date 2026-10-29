@@ -82,8 +82,8 @@ describe('sending a photo', () => {
       }) as typeof fetch,
     });
     await client.chat('like this', 'ses_1', PNG);
-    assert.deepEqual(body, { text: 'like this', sessionId: 'ses_1', imageDataUrl: PNG });
+    assert.deepEqual(body, { text: 'like this', sessionId: 'ses_1', imageDataUrl: PNG, language: 'auto' });
     await client.chat('no photo');
-    assert.deepEqual(body, { text: 'no photo' });
+    assert.deepEqual(body, { text: 'no photo', language: 'auto' });
   });
 });

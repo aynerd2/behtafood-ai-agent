@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createAgentClient, type AgentClientOptions } from '../logic/client';
 import { AssistantController, type AssistantState } from '../logic/controller';
+import type { AssistantLanguage } from '../logic/language';
 
 /** One controller for the lifetime of the component; polling stops on unmount. */
-export function useAssistantController(opts: AgentClientOptions): AssistantController {
+export function useAssistantController(opts: AgentClientOptions & { language?: AssistantLanguage }): AssistantController {
   const optsRef = useRef(opts);
   optsRef.current = opts;
   const ref = useRef<AssistantController | null>(null);
@@ -13,6 +14,8 @@ export function useAssistantController(opts: AgentClientOptions): AssistantContr
     ref.current = new AssistantController({
       // The URL is fixed for the app's lifetime; the token is read per request.
       client: createAgentClient({ apiUrl: opts.apiUrl, getToken: () => optsRef.current.getToken() }),
+      // Only the first value counts; later changes go through setLanguage.
+      language: opts.language,
     });
   }
   useEffect(() => () => ref.current?.dispose(), []);

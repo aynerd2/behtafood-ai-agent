@@ -331,7 +331,7 @@ describe('createAgentClient', () => {
       'http://10.0.0.2:7001/api/agent/check',
     ]);
     for (const c of calls) assert.equal((c.init.headers as Record<string, string>).Authorization, 'Bearer tok');
-    assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { text: 'hi', sessionId: 'ses_1' });
+    assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { text: 'hi', sessionId: 'ses_1', language: 'auto' });
   });
 
   test('maps HTTP failures to kinds the UI can explain', async () => {

@@ -4,9 +4,13 @@
 //   Guided  a small bar; the host app's real screens follow the assistant's
 //           real, successful steps (see logic/guide.ts and logic/guidedMode.ts).
 //
-// The host app decides WHEN the button shows (`visible`), whether the customer
-// may use it (`canUse`, i.e. signed in), and how to open its own screens
-// (`onNavigate`). Without onNavigate, only Chat mode is offered. Keep this
+// Chat is the default. Guided mode is offered only when the host turns it on
+// (`guidedEnabled`) and says how to open its own screens (`onNavigate`);
+// otherwise there is no Chat | Guided switch, no guided bar and no guided
+// navigation, and the panel always opens full-screen in Chat.
+//
+// The host app decides WHEN the button shows (`visible`) and whether the
+// customer may use it (`canUse`, i.e. signed in). Keep this
 // mounted while the app runs so the conversation survives closing the panel.
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -18,6 +22,7 @@ import { GuideSession, type GuideMode } from '../logic/guidedMode';
 import { ChatPanel } from './ChatPanel';
 import { clearGuideHighlight, setGuideHighlight, setGuideTouchHandler } from './guideHighlights';
 import { GuidedPanel } from './GuidedPanel';
+import type { AssistantLanguage } from '../logic/language';
 import { useAssistantController } from './hooks';
 import { AssistantThemeProvider, useAssistantTheme, type AssistantThemeInput } from './theme';
 
@@ -33,11 +38,16 @@ export interface FloatingAssistantProps {
   onSignInRequired?: () => void;
   /** Open the app's own order screen for a placed order. */
   onOpenOrder?: (orderId: string) => void;
+  /** Offer Guided mode (off by default). Needs onNavigate too. */
+  guidedEnabled?: boolean;
   /** Open one of the app's own screens for guided mode. */
   onNavigate?: (route: GuideRoute) => void;
-  /** The remembered mode (Guided when there is none). */
+  /** The remembered mode, used only when guided mode is enabled. */
   initialMode?: GuideMode;
   onModeChange?: (mode: GuideMode) => void;
+  /** The remembered reply language (Auto when there is none). */
+  initialLanguage?: AssistantLanguage;
+  onLanguageChange?: (language: AssistantLanguage) => void;
   /** Distance from the bottom of the screen, to clear a tab bar. */
   bottomOffset?: number;
   theme?: AssistantThemeInput;
@@ -58,14 +68,17 @@ function FloatingAssistantInner({
   canUse,
   onSignInRequired,
   onOpenOrder,
+  guidedEnabled = false,
   onNavigate,
   initialMode = 'guided',
   onModeChange,
+  initialLanguage,
+  onLanguageChange,
   bottomOffset = 96,
 }: FloatingAssistantProps) {
   const { colors } = useAssistantTheme();
-  const controller = useAssistantController({ apiUrl, getToken });
-  const guidedAvailable = !!onNavigate;
+  const controller = useAssistantController({ apiUrl, getToken, language: initialLanguage });
+  const guidedAvailable = guidedEnabled && !!onNavigate;
   const [open, setOpen] = useState(false);
   const [mode, setModeState] = useState<GuideMode>(guidedAvailable ? initialMode : 'chat');
   const [fly, setFly] = useState<{ key: string; label: string } | null>(null);
@@ -156,16 +169,17 @@ function FloatingAssistantInner({
           <Ionicons name="sparkles" size={24} color={colors.white} />
         </Pressable>
       ) : null}
-      {open && canUse && mode === 'guided' ? (
+      {open && canUse && guidedAvailable && mode === 'guided' ? (
         <GuidedPanel controller={controller} session={session} onModeChange={setMode} onClose={() => setOpen(false)} onOpenOrder={openOrder} fly={fly} />
       ) : null}
-      <Modal visible={open && canUse && mode === 'chat'} animationType="slide" onRequestClose={() => setOpen(false)}>
+      <Modal visible={open && canUse && (!guidedAvailable || mode === 'chat')} animationType="slide" onRequestClose={() => setOpen(false)}>
         <ChatPanel
           controller={controller}
           onClose={() => setOpen(false)}
           onOpenOrder={openOrder}
           mode={guidedAvailable ? mode : undefined}
           onModeChange={guidedAvailable ? setMode : undefined}
+          onLanguageChange={onLanguageChange}
         />
       </Modal>
     </>

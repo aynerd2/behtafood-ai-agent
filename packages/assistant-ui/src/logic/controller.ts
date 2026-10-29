@@ -27,6 +27,7 @@ import {
   turnFailed,
   type ConversationState,
 } from './conversation';
+import { isAssistantLanguage, type AssistantLanguage } from './language';
 import { PHOTO_REFUSAL, checkPhoto } from './photo';
 import type { PlacedOrder, StoredEvent } from './types';
 import {
@@ -53,6 +54,8 @@ export interface AssistantState extends ConversationState {
   busy: boolean;
   /** Placed orders being tracked, by order id. No model calls. */
   tracking: Record<string, TrackingState>;
+  /** The reply language sent with every message. */
+  language: AssistantLanguage;
 }
 
 export interface ControllerOptions {
@@ -68,13 +71,15 @@ export interface ControllerOptions {
   trackIntervalMs?: number;
   /** Stop tracking after this long (default 3 hours). */
   maxTrackMs?: number;
+  /** The remembered reply language (Auto when not given). */
+  language?: AssistantLanguage;
 }
 
 const LOST_CONNECTION = 'Lost connection to the assistant. Check your internet and try again.';
 const TOO_SLOW = 'The assistant is taking too long. Please try again.';
 
 export class AssistantController {
-  #state: AssistantState = { ...initialState(), busy: false, tracking: {} };
+  #state: AssistantState;
   readonly #listeners = new Set<() => void>();
   readonly #client: AgentClient;
   readonly #sleep: (ms: number) => Promise<void>;
@@ -91,6 +96,7 @@ export class AssistantController {
 
   constructor(opts: ControllerOptions) {
     this.#client = opts.client;
+    this.#state = { ...initialState(), busy: false, tracking: {}, language: isAssistantLanguage(opts.language) ? opts.language : 'auto' };
     this.#sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.#now = opts.now ?? Date.now;
     this.#interval = opts.pollIntervalMs ?? 1000;
@@ -134,7 +140,7 @@ export class AssistantController {
   }
 
   #conv(fn: (s: ConversationState) => ConversationState): void {
-    this.#set((s) => ({ ...fn(s), busy: s.busy, tracking: s.tracking }));
+    this.#set((s) => ({ ...fn(s), busy: s.busy, tracking: s.tracking, language: s.language }));
   }
 
   #setTracking(orderId: string, fn: (t: TrackingState) => TrackingState): void {
@@ -199,12 +205,17 @@ export class AssistantController {
     });
   }
 
+  /** The reply language for the next messages (unknown codes are ignored). */
+  setLanguage(language: AssistantLanguage): void {
+    if (isAssistantLanguage(language)) this.#set({ language });
+  }
+
   /** One message, optionally with one photo that the app has already resized. */
   async send(text: string, photo?: string): Promise<void> {
     const clean = text.trim();
     if ((!clean && !photo) || this.#state.busy) return;
     const turnId = `turn_${++this.#turnSeq}`;
-    this.#set((s) => ({ ...startTurn(s, turnId, clean || 'Find me something like this.', photo), busy: true, tracking: s.tracking }));
+    this.#set((s) => ({ ...startTurn(s, turnId, clean || 'Find me something like this.', photo), busy: true, tracking: s.tracking, language: s.language }));
     this.#emit({ type: 'turn_started', turnId });
     try {
       let runId: string;
@@ -213,7 +224,7 @@ export class AssistantController {
           this.#conv((s) => turnFailed(s, turnId, PHOTO_REFUSAL));
           return;
         }
-        const r = await this.#client.chat(clean, this.#state.sessionId, photo);
+        const r = await this.#client.chat(clean, this.#state.sessionId, photo, this.#state.language);
         runId = r.runId;
         this.#conv((s) => turnAccepted(s, turnId, r));
       } catch (err) {

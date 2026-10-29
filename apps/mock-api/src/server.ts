@@ -11,6 +11,7 @@ import {
   delayThresholdsFromEnv,
   nudgeResultText,
   trackingSnapshot,
+  type AssistantLanguage,
   type ModelClient,
   type NudgeParty,
   type OrderStatus,
@@ -93,6 +94,8 @@ export function createMockServer(opts: MockServerOptions) {
             text: typeof body.message === 'string' ? body.message : '',
             sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
             imageDataUrl: typeof body.imageDataUrl === 'string' && body.imageDataUrl.startsWith('data:image/') ? body.imageDataUrl : undefined,
+            // Anything but auto|en|pcm|yo|ha|ig is refused by the agent.
+            language: (body.language ?? undefined) as AssistantLanguage | undefined,
           },
           emit,
         );

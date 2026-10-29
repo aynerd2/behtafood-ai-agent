@@ -23,7 +23,9 @@ export type GuideMode = 'chat' | 'guided';
 export type GuideStatus = 'chat' | 'closed' | 'stopped' | 'paused' | 'navigating';
 
 /** The remembered choice, or Guided for the first run. */
-export function initialGuideMode(stored: string | null | undefined): GuideMode {
+export function initialGuideMode(stored: string | null | undefined, opts: { guidedEnabled?: boolean } = {}): GuideMode {
+  // With guided mode switched off for the app, a remembered "guided" is ignored.
+  if (opts.guidedEnabled === false) return 'chat';
   return stored === 'chat' || stored === 'guided' ? stored : 'guided';
 }
 
@@ -194,7 +196,7 @@ const NEEDS_CUSTOMER = new Set<ApprovalCardState['status']>(['awaiting', 'price_
  * screen shows). Sheet whenever the assistant needs the customer: nothing
  * asked yet, an approval card (at once, even mid-run), a question or a choice.
  */
-export function guidedLayout(state: AssistantState, _now: number): 'bar' | 'sheet' {
+export function guidedLayout(state: Omit<AssistantState, 'language'>, _now: number): 'bar' | 'sheet' {
   const turn = state.turns.at(-1);
   if (!turn) return 'sheet';
   if (turn.proposalIds.some((id) => NEEDS_CUSTOMER.has(state.cards[id]?.status ?? 'placed'))) return 'sheet';

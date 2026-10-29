@@ -11,7 +11,7 @@ import { RateLimiter } from './limits';
 import type { ChatMessage, ContentPart, ModelClient } from './model';
 import { NudgeService } from './nudges';
 import type { BehtafoodPort, CustomerContext } from './port';
-import { SYSTEM_PROMPT } from './prompt';
+import { LANGUAGE_REFUSAL, SYSTEM_PROMPT, isAssistantLanguage, systemPromptFor, type AssistantLanguage } from './prompt';
 import { ProposalStore, type ProposalView } from './proposals';
 import { TOOL_SCHEMAS, executeTool, newSessionState, type SessionState } from './tools';
 import { UsageMeter } from './usage';
@@ -71,7 +71,7 @@ export class Agent {
 
   async handleMessage(
     ctx: CustomerContext,
-    input: { sessionId?: string; text: string; imageDataUrl?: string },
+    input: { sessionId?: string; text: string; imageDataUrl?: string; language?: AssistantLanguage },
     emit: (e: TimelineEvent) => void,
   ): Promise<{ sessionId: string }> {
     const session = this.#session(ctx, input.sessionId);
@@ -86,6 +86,11 @@ export class Agent {
       return { sessionId: session.id };
     };
 
+    const language = input.language ?? 'auto';
+    if (!isAssistantLanguage(language)) {
+      emit({ type: 'error', code: 'bad_request', message: LANGUAGE_REFUSAL });
+      return finish();
+    }
     const image = input.imageDataUrl ? input.imageDataUrl : undefined;
     if (image && !checkImageDataUrl(image).ok) {
       emit({ type: 'error', code: 'bad_request', message: IMAGE_REFUSAL });
@@ -108,6 +113,8 @@ export class Agent {
     const content: string | ContentPart[] = image
       ? [{ type: 'text', text }, { type: 'image_url', image_url: { url: image, detail: 'low' } }]
       : text;
+    // The language applies to this message; the next one may choose another.
+    session.messages[0] = { role: 'system', content: systemPromptFor(language) };
     const userMessage: ChatMessage = { role: 'user', content };
     session.messages.push(userMessage);
     if (image) photoMessage = userMessage;
