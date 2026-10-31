@@ -6,7 +6,7 @@
 import type { ToolSchema } from './model';
 import { PortError, type BehtafoodPort, type Cart, type CartChoice, type CustomerContext, type MenuItemSummary, type NudgeParty, type Quote } from './port';
 import type { NudgeService } from './nudges';
-import type { ProposalStore, ProposalView } from './proposals';
+import type { ProposalImages, ProposalStore, ProposalView } from './proposals';
 
 const fn = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []): ToolSchema => ({
   type: 'function',
@@ -92,13 +92,15 @@ export interface SessionState {
   carts: Map<string, Cart>;
   quotes: Map<string, { cart: Cart; quote: Quote }>;
   restaurantNames: Map<string, string>;
+  /** Display-only image URLs by restaurant or item id, for the app's cards. Never in a model message. */
+  images: Map<string, string>;
   budgetNaira?: number;
   cartSeq: number;
   quoteSeq: number;
 }
 
 export function newSessionState(): SessionState {
-  return { carts: new Map(), quotes: new Map(), restaurantNames: new Map(), cartSeq: 0, quoteSeq: 0 };
+  return { carts: new Map(), quotes: new Map(), restaurantNames: new Map(), images: new Map(), cartSeq: 0, quoteSeq: 0 };
 }
 
 export interface ToolEnv {
@@ -159,6 +161,26 @@ function parseChoices(raw: unknown): CartChoice[] | undefined {
     const o = (c ?? {}) as Record<string, unknown>;
     return { group: str(o, 'group'), option: str(o, 'option') };
   });
+}
+
+/** `{ imageUrl }` for display data when one is known; never added to a model result. */
+function imageOf(state: SessionState, id: string): { imageUrl?: string } {
+  const url = state.images.get(id);
+  return url ? { imageUrl: url } : {};
+}
+
+function rememberImages(state: SessionState, menu: MenuItemSummary[]) {
+  for (const m of menu) if (m.imageUrl) state.images.set(m.id, m.imageUrl);
+}
+
+function proposalImages(state: SessionState, cart: Cart): ProposalImages {
+  const items: Record<string, string> = {};
+  for (const l of cart.lines) {
+    const url = state.images.get(l.itemId);
+    if (url) items[l.itemId] = url;
+  }
+  const restaurantImageUrl = state.images.get(cart.restaurantId);
+  return { ...(restaurantImageUrl ? { restaurantImageUrl } : {}), items };
 }
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -242,19 +264,23 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
       const budget = optInt(args, 'budget_naira', 100, 1_000_000);
       if (budget !== undefined) state.budgetNaira = budget;
       const found = await port.searchRestaurants(ctx, { text: query, limit: 5 });
-      for (const r of found) state.restaurantNames.set(r.id, r.name);
+      for (const r of found) {
+        state.restaurantNames.set(r.id, r.name);
+        if (r.imageUrl) state.images.set(r.id, r.imageUrl);
+      }
       const restaurants = found.map((r) => ({ id: r.id, name: r.name, cuisines: r.cuisines, delivery_fee_naira: r.deliveryFeeNaira, description: clip(r.description) }));
       return {
         ok: true,
         label: `Searched restaurants: ${found.length} open`,
         result: { note: UNTRUSTED_NOTE, budget_naira: state.budgetNaira, restaurants },
-        data: { restaurants: restaurants.map(({ id, name, delivery_fee_naira }) => ({ id, name, delivery_fee_naira })) },
+        data: { restaurants: restaurants.map(({ id, name, delivery_fee_naira }) => ({ id, name, delivery_fee_naira, ...imageOf(state, id) })) },
       };
     }
     case 'get_menu': {
       const restaurantId = str(args, 'restaurant_id');
       const maxPrice = optInt(args, 'max_price_naira', 1, 1_000_000);
       const menu = await port.getMenu(ctx, restaurantId);
+      rememberImages(state, menu);
       const items = menu
         .filter((m) => m.available && (maxPrice === undefined || m.priceNaira <= maxPrice))
         .sort((a, b) => a.priceNaira - b.priceNaira)
@@ -266,7 +292,7 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
         label: `Read menu: ${restaurantName}`,
         result: { note: UNTRUSTED_NOTE, restaurant_id: restaurantId, items },
         // `choices` lets the app offer a required pick as buttons; it never picks.
-        data: { restaurantId, items: items.map(({ id, name, price_naira, choices }) => ({ id, name, price_naira, ...(choices ? { choices } : {}) })) },
+        data: { restaurantId, items: items.map(({ id, name, price_naira, choices }) => ({ id, name, price_naira, ...(choices ? { choices } : {}), ...imageOf(state, id) })) },
       };
     }
     case 'get_my_recent_orders': {
@@ -291,6 +317,7 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
         return { itemId: str(it, 'item_id'), quantity: optInt(it, 'quantity', 1, 20) ?? 1, picks: parseChoices(it.choices) };
       });
       const menu = await port.getMenu(ctx, restaurantId);
+      rememberImages(state, menu);
       const cartLines: Cart['lines'] = [];
       for (const l of lines) {
         const m = menu.find((x) => x.id === l.itemId);
@@ -312,7 +339,7 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
       const summary = cartLines.map((l) => ({ name: menu.find((m) => m.id === l.itemId)!.name, quantity: l.quantity, ...(l.choices ? { choices: l.choices } : {}) }));
       // Display data for the app (guided mode shows the real dish): ids added
       // here only; the model's own result stays the short summary.
-      const display = cartLines.map((l, i) => ({ itemId: l.itemId, ...summary[i]! }));
+      const display = cartLines.map((l, i) => ({ itemId: l.itemId, ...summary[i]!, ...imageOf(state, l.itemId) }));
       return { ok: true, label: 'Built cart', result: { cart_id: cartId, items: summary }, data: { cartId, restaurantId, items: display } };
     }
     case 'quote_order': {
@@ -354,7 +381,7 @@ async function run(name: string, args: Record<string, unknown>, env: ToolEnv): P
           `Total ${naira(q.quote.totalNaira)} is over the budget of ${naira(budget)}. Suggest a cheaper option, or ask whether the customer accepts the higher total.`,
         );
       }
-      const p = env.proposals.create(ctx, { sessionId: env.sessionId, cart: q.cart, quote: q.quote });
+      const p = env.proposals.create(ctx, { sessionId: env.sessionId, cart: q.cart, quote: q.quote, images: proposalImages(state, q.cart) });
       const view = env.proposals.view(p);
       return {
         ok: true,

@@ -15,12 +15,16 @@ export interface ProposalLine {
   unitPriceNaira: number;
   lineTotalNaira: number;
   choices?: ProposalChoice[];
+  /** Display only. */
+  imageUrl?: string;
 }
 
 /** The approval card, exactly as the server quoted it. */
 export interface ProposalView {
   proposalId: string;
   restaurantName: string;
+  /** Display only. Relative paths resolve against the API host (imageSource). */
+  restaurantImageUrl?: string;
   lines: ProposalLine[];
   subtotalNaira: number;
   deliveryFeeNaira: number;

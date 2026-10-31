@@ -27,6 +27,6 @@ export * from './ui/theme';
 export * from './ui/hooks';
 export { ActionTimeline } from './ui/ActionTimeline';
 export { ApprovalCard, type ApprovalCardProps } from './ui/ApprovalCard';
-export { CartCard, ChoiceChips, RestaurantCards } from './ui/Cards';
+export { CartCard, ChoiceChips, ImageApiContext, RestaurantCards, Thumb } from './ui/Cards';
 export { ChatPanel, type ChatPanelProps } from './ui/ChatPanel';
 export { FloatingAssistant, type FloatingAssistantProps } from './ui/FloatingAssistant';

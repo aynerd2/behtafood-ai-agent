@@ -9,7 +9,7 @@ import { PROPOSAL_TTL_MS, ProposalStore, type Cart } from '@behtafood-agent/agen
 import { MockBehtafoodPort } from '../src/mockPort';
 import { ADA, FakeClock, TUNDE } from './helpers';
 
-const CART: Cart = { restaurantId: 'rst_spice', lines: [{ itemId: 'itm_jollof', quantity: 1 }, { itemId: 'itm_chicken', quantity: 1 }] };
+const CART: Cart = { restaurantId: 'rst_fountain', lines: [{ itemId: 'itm_akara', quantity: 1 }, { itemId: 'itm_agoyin_cafe', quantity: 1 }] };
 const LATER = PROPOSAL_TTL_MS + 60_000;
 
 async function fixture() {

@@ -41,6 +41,8 @@ export interface Proposal {
   cart: Cart;
   /** The server's quote, exactly as returned. */
   quote: Quote;
+  /** Card images (display only). */
+  images?: ProposalImages;
   state: ProposalState;
   createdAt: number;
   expiresAt: number;
@@ -51,10 +53,18 @@ export interface Proposal {
 }
 
 /** What the approval card shows. */
+/** Images for the approval card. Display only: never part of a model message. */
+export interface ProposalImages {
+  restaurantImageUrl?: string;
+  /** By item id. */
+  items?: Record<string, string>;
+}
+
 export interface ProposalView {
   proposalId: string;
   restaurantName: string;
-  lines: QuoteLine[];
+  restaurantImageUrl?: string;
+  lines: (QuoteLine & { imageUrl?: string })[];
   subtotalNaira: number;
   deliveryFeeNaira: number;
   discountNaira: number;
@@ -105,7 +115,7 @@ export class ProposalStore {
   }
 
   /** Records a quoted cart for approval. Any earlier open proposal in the same session is superseded. */
-  create(ctx: CustomerContext, input: { sessionId: string; cart: Cart; quote: Quote }): Proposal {
+  create(ctx: CustomerContext, input: { sessionId: string; cart: Cart; quote: Quote; images?: ProposalImages }): Proposal {
     for (const p of this.#byId.values()) {
       if (p.sessionId === input.sessionId && p.customerId === ctx.customerId && p.state === 'awaiting_approval') p.state = 'cancelled';
     }
@@ -116,6 +126,7 @@ export class ProposalStore {
       sessionId: input.sessionId,
       cart: structuredClone(input.cart),
       quote: structuredClone(input.quote),
+      ...(input.images ? { images: structuredClone(input.images) } : {}),
       state: 'awaiting_approval',
       createdAt: now,
       expiresAt: now + this.#ttl,
@@ -135,7 +146,8 @@ export class ProposalStore {
     return {
       proposalId: p.id,
       restaurantName: p.quote.restaurantName,
-      lines: p.quote.lines,
+      ...(p.images?.restaurantImageUrl ? { restaurantImageUrl: p.images.restaurantImageUrl } : {}),
+      lines: p.quote.lines.map((l) => (p.images?.items?.[l.itemId] ? { ...l, imageUrl: p.images.items[l.itemId] } : l)),
       subtotalNaira: p.quote.subtotalNaira,
       deliveryFeeNaira: p.quote.deliveryFeeNaira,
       discountNaira: p.quote.discountNaira,

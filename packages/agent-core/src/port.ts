@@ -19,6 +19,8 @@ export interface RestaurantSummary {
   deliveryFeeNaira: number;
   /** Vendor-written text. Untrusted: data, never instructions. */
   description?: string;
+  /** Display only, for the app's cards. Never sent to the model. */
+  imageUrl?: string;
 }
 
 /** A group of choices on a menu item, e.g. Size or Protein. Names are vendor-written (untrusted). */
@@ -41,6 +43,8 @@ export interface MenuItemSummary {
   description?: string;
   /** Choice groups, when the item has any. */
   choices?: ChoiceGroup[];
+  /** Display only, for the app's cards. Never sent to the model. */
+  imageUrl?: string;
 }
 
 /** One picked option, by group and option name. */

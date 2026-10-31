@@ -104,6 +104,16 @@ The hackathon ran 27 Oct to 4 Nov 2026.
 
 The agent uses Behtafood's existing ordering, pricing and wallet code unchanged: the adapter calls the existing endpoints as the customer.
 
+## Images
+
+The mock data uses the same three fake Ado-Ekiti restaurants as our private demo, with a picture for every restaurant and dish (`assets/food/`, served by the mock API at `/assets/food/<file>`). The assistant's cards show them as thumbnails; image links are display data only and are never sent to the model.
+
+- **Openly licensed photos (19):** dish and cover photos from Wikimedia Commons under CC BY-SA 4.0 (15), CC BY-SA 2.0 (2), CC BY-SA 3.0 (1) and CC0 (1). Each was cropped and resized; title, author, licence and link are in [assets/food/CREDITS.md](assets/food/CREDITS.md). The cropped photos keep their original licences, not the MIT licence of the code.
+- **Drawn for this demo (12):** restaurant wordmark logos and illustrated avatars, drawn by a script. No photos of real people.
+- **AI-generated: none.**
+
+No image comes from a real vendor, a delivery app, a restaurant website or the live Behtafood app.
+
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). Images in `assets/food/` have their own licences, listed in [CREDITS.md](CREDITS.md).

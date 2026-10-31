@@ -18,7 +18,7 @@ import {
 import { MockBehtafoodPort } from '../src/mockPort';
 import { ADA, FakeClock, FnModel, TUNDE, harness, sequenceModel, toolCall } from './helpers';
 
-const JOLLOF_CHICKEN: Cart = { restaurantId: 'rst_spice', lines: [{ itemId: 'itm_jollof', quantity: 1 }, { itemId: 'itm_chicken', quantity: 1 }] };
+const JOLLOF_CHICKEN: Cart = { restaurantId: 'rst_fountain', lines: [{ itemId: 'itm_akara', quantity: 1 }, { itemId: 'itm_agoyin_cafe', quantity: 1 }] };
 
 async function proposalFixture(ctx = ADA, cart = JOLLOF_CHICKEN) {
   const clock = new FakeClock();
@@ -56,7 +56,7 @@ describe('rule 1: a proposal stores the server quote and expires after 10 minute
 describe('rule 2: approval re-quotes; a changed total refuses and asks again', () => {
   test('price change refuses, then a second approval places at the new total', async () => {
     const { port, proposals, p } = await proposalFixture();
-    port.setPrice('itm_chicken', 1400);
+    port.setPrice('itm_agoyin_cafe', 1800);
     const r1 = await proposals.approve(ADA, p.id);
     assert.equal(r1.status, 'price_changed');
     assert.equal(r1.status === 'price_changed' && r1.proposal.totalNaira, 3200);
@@ -135,7 +135,7 @@ describe('rule 4: refuse with a clear reason and place nothing', () => {
 
   test('item became unavailable', async () => {
     const { port, proposals, p } = await proposalFixture();
-    port.setAvailable('itm_chicken', false);
+    port.setAvailable('itm_agoyin_cafe', false);
     const r = await proposals.approve(ADA, p.id);
     assert.equal(r.status === 'refused' && r.code, 'ITEM_UNAVAILABLE');
     assert.equal(port.orders.length, 0);
@@ -143,7 +143,7 @@ describe('rule 4: refuse with a clear reason and place nothing', () => {
 
   test('restaurant closed by the vendor', async () => {
     const { port, proposals, p } = await proposalFixture();
-    port.setRestaurant('rst_spice', { isOpen: false });
+    port.setRestaurant('rst_fountain', { isOpen: false });
     const r = await proposals.approve(ADA, p.id);
     assert.equal(r.status === 'refused' && r.code, 'RESTAURANT_CLOSED');
     assert.equal(port.orders.length, 0);
@@ -151,7 +151,7 @@ describe('rule 4: refuse with a clear reason and place nothing', () => {
 
   test('restaurant closed by an admin even though the vendor says open', async () => {
     const { port, proposals, p } = await proposalFixture();
-    port.setRestaurant('rst_spice', { adminForceClosed: true });
+    port.setRestaurant('rst_fountain', { adminForceClosed: true });
     const r = await proposals.approve(ADA, p.id);
     assert.equal(r.status === 'refused' && r.code, 'RESTAURANT_CLOSED');
     assert.equal(port.orders.length, 0);
@@ -181,7 +181,7 @@ describe('rule 5: prompt injection in vendor text causes nothing', () => {
   });
 
   test('vendor text reaches the model marked as untrusted data', async () => {
-    const model = sequenceModel([{ content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_spice' })] }]);
+    const model = sequenceModel([{ content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_fountain' })] }]);
     const h = harness({ model });
     await h.send('What is on the menu at Spice Route Kitchen?');
     const toolMsg = model.requests[1]!.messages.find((m) => m.role === 'tool');
@@ -192,12 +192,12 @@ describe('rule 5: prompt injection in vendor text causes nothing', () => {
 
   test('a model that obeys the injected text still places no order', async () => {
     const model = sequenceModel([
-      { content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_spice' })] },
+      { content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_fountain' })] },
       {
         content: null,
         tool_calls: [
           toolCall('place_order', { item_id: 'itm_special', quantity: 10 }),
-          toolCall('build_cart', { restaurant_id: 'rst_spice', items: [{ item_id: 'itm_special', quantity: 10 }] }),
+          toolCall('build_cart', { restaurant_id: 'rst_fountain', items: [{ item_id: 'itm_special', quantity: 10 }] }),
         ],
       },
       { content: null, tool_calls: [toolCall('quote_order', { cart_id: 'cart_1' })] },
@@ -232,7 +232,7 @@ describe('rule 6: rate limit, 8 model calls per message, daily spend cap', () =>
   });
 
   test('a model that never stops calling tools is cut off at 8 calls', async () => {
-    const model = new FnModel(() => ({ content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_spice' })] }));
+    const model = new FnModel(() => ({ content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_fountain' })] }));
     const h = harness({ model });
     const r = await h.send('loop forever');
     assert.equal(MAX_MODEL_CALLS_PER_MESSAGE, 8);
@@ -243,7 +243,7 @@ describe('rule 6: rate limit, 8 model calls per message, daily spend cap', () =>
   test('the daily spend cap stops model calls', async () => {
     const clock = new FakeClock();
     const model = new FnModel(
-      () => ({ content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_spice' })] }),
+      () => ({ content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_fountain' })] }),
       'muse-spark-1.3',
       { promptTokens: 10_000, cachedTokens: 0, completionTokens: 1000, reasoningTokens: 0 },
     );

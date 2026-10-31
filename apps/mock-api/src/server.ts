@@ -1,9 +1,12 @@
 // HTTP server for the agent against the mock backend. Same routes the private
 // backend will expose: /api/agent/chat (server-sent events), /api/agent/approve,
 // /api/agent/check, /api/agent/cancel, /api/agent/usage. All of them 404 unless
-// the agent is enabled.
+// the agent is enabled. GET /assets/food/<file>.jpg serves the demo food
+// images (fake data, so always on).
 
+import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { fileURLToPath } from 'node:url';
 import {
   Agent,
   PortError,
@@ -27,6 +30,19 @@ export interface MockServerOptions {
 
 const MAX_BODY_BYTES = 6 * 1024 * 1024; // room for one compressed photo
 const ORDER_STATUSES: OrderStatus[] = ['pending', 'accepted', 'preparing', 'ready', 'rider_assigned', 'picked_up', 'on_the_way', 'delivered', 'cancelled'];
+
+const ASSET_DIR = fileURLToPath(new URL('../../../assets/food/', import.meta.url));
+const ASSET_PATH = /^\/assets\/food\/([a-z0-9-]+\.jpg)$/;
+
+async function sendAsset(res: ServerResponse, file: string) {
+  try {
+    const bytes = await readFile(ASSET_DIR + file);
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=3600' });
+    res.end(bytes);
+  } catch {
+    sendJson(res, 404, { error: 'Not found' });
+  }
+}
 
 class HttpError extends Error {
   constructor(
@@ -74,6 +90,8 @@ export function createMockServer(opts: MockServerOptions) {
 
     const url = new URL(req.url ?? '/', 'http://localhost');
     try {
+      const asset = req.method === 'GET' ? ASSET_PATH.exec(url.pathname) : null;
+      if (asset) return void (await sendAsset(res, asset[1]!));
       if (url.pathname === '/health') return sendJson(res, 200, { ok: true, agentEnabled: opts.agentEnabled });
       if (!opts.agentEnabled || !(url.pathname.startsWith('/api/agent/') || url.pathname.startsWith('/mock/'))) {
         return sendJson(res, 404, { error: 'Not found' });

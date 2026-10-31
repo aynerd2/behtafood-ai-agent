@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { guideActionForPlaced, guideEffects, initialGuideMap, mapGuideEvent, type GuideAction, type GuideRoute } from '../logic/guide';
 import { GuideSession, type GuideMode } from '../logic/guidedMode';
+import { ImageApiContext } from './Cards';
 import { ChatPanel } from './ChatPanel';
 import { clearGuideHighlight, setGuideHighlight, setGuideTouchHandler } from './guideHighlights';
 import { GuidedPanel } from './GuidedPanel';
@@ -56,7 +57,9 @@ export interface FloatingAssistantProps {
 export function FloatingAssistant(props: FloatingAssistantProps) {
   return (
     <AssistantThemeProvider theme={props.theme}>
-      <FloatingAssistantInner {...props} />
+      <ImageApiContext.Provider value={props.apiUrl}>
+        <FloatingAssistantInner {...props} />
+      </ImageApiContext.Provider>
     </AssistantThemeProvider>
   );
 }

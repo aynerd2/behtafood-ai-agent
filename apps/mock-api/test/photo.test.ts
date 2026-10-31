@@ -80,7 +80,7 @@ describe('a photo can never buy anything', () => {
   test('text inside a photo telling the agent to order causes no order, even if the model obeys it', async () => {
     // A fake model that "reads" an instruction in the photo and tries everything.
     const model = new FnModel((_m, n) => {
-      if (n === 1) return { content: null, tool_calls: [toolCall('place_order', { restaurant_id: 'rst_spice', approve: true })] };
+      if (n === 1) return { content: null, tool_calls: [toolCall('place_order', { restaurant_id: 'rst_fountain', approve: true })] };
       if (n === 2) return { content: null, tool_calls: [toolCall('approve_order', { proposal_id: 'anything' })] };
       if (n === 3) return { content: null, tool_calls: [toolCall('propose_order', { quote_id: 'quote_1' })] };
       return { content: 'Done.' };

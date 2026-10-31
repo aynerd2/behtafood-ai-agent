@@ -48,7 +48,7 @@ describe('demo path: ask, options, pick, quote, approve, one order', () => {
 
 describe('timeline', () => {
   test('a step is emitted only after its tool call has returned', async () => {
-    const model = sequenceModel([{ content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_spice' })] }]);
+    const model = sequenceModel([{ content: null, tool_calls: [toolCall('get_menu', { restaurant_id: 'rst_fountain' })] }]);
     const h = harness({ model });
     let returned = false;
     const realGetMenu = h.port.getMenu.bind(h.port);
@@ -88,7 +88,7 @@ describe('budget includes the delivery fee', () => {
   test('propose_order refuses a quote over the stated budget', async () => {
     const model = sequenceModel([
       { content: null, tool_calls: [toolCall('search_restaurants', { query: 'rice chicken', budget_naira: 2800 })] },
-      { content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_spice', items: [{ item_id: 'itm_jollof', quantity: 1 }, { item_id: 'itm_chicken', quantity: 1 }] })] },
+      { content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_fountain', items: [{ item_id: 'itm_akara', quantity: 1 }, { item_id: 'itm_agoyin_cafe', quantity: 1 }] })] },
       { content: null, tool_calls: [toolCall('quote_order', { cart_id: 'cart_1' })] },
       { content: null, tool_calls: [toolCall('propose_order', { quote_id: 'quote_1' })] },
       { content: 'That is over your budget.' },
@@ -97,7 +97,7 @@ describe('budget includes the delivery fee', () => {
     const r = await h.send('rice and chicken, 2800 max');
     const quote = r.events.find((e) => e.type === 'step' && e.tool === 'quote_order');
     assert.ok(quote && quote.type === 'step');
-    assert.deepEqual((quote.data as { within_budget: boolean }).within_budget, false); // 2700 food + 300 delivery
+    assert.deepEqual((quote.data as { within_budget: boolean }).within_budget, false); // 2800 food + 200 delivery
     const propose = r.events.find((e) => e.type === 'step' && e.tool === 'propose_order');
     assert.ok(propose && propose.type === 'step' && propose.status === 'failed');
     assert.ok(!r.events.some((e) => e.type === 'awaiting_approval'));

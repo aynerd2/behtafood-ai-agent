@@ -23,12 +23,16 @@ export interface RestaurantCardData {
   id: string;
   name: string;
   deliveryFeeNaira: number;
+  imageUrl?: string;
 }
 
 export interface CartCardData {
   cartId: string;
-  items: { name: string; quantity: number; choices?: { group: string; option: string }[] }[];
+  items: { name: string; quantity: number; choices?: { group: string; option: string }[]; imageUrl?: string }[];
 }
+
+/** `{ imageUrl }` only for a string value (display data from the server). */
+const imageOf = (v: unknown): { imageUrl?: string } => (typeof v === 'string' && v ? { imageUrl: v } : {});
 
 export interface ChoiceOption {
   name: string;
@@ -137,7 +141,7 @@ function applyOne(s: ConversationState, turnId: string, stored: StoredEvent): Co
       let next = updateTurn(s, turnId, (t) => ({ ...t, steps: [...t.steps, { seq: stored.seq, tool: e.tool, status: e.status, label: e.label }] }));
       const data = asObj(e.data);
       if (e.tool === 'search_restaurants' && e.status === 'done' && Array.isArray(data.restaurants)) {
-        const restaurants = data.restaurants.map((r: any) => ({ id: String(r.id), name: String(r.name), deliveryFeeNaira: Number(r.delivery_fee_naira) }));
+        const restaurants = data.restaurants.map((r: any) => ({ id: String(r.id), name: String(r.name), deliveryFeeNaira: Number(r.delivery_fee_naira), ...imageOf(r.imageUrl) }));
         next = updateTurn(next, turnId, (t) => ({ ...t, restaurants }));
       }
       if (e.tool === 'get_menu' && e.status === 'done' && Array.isArray(data.items)) {
@@ -150,7 +154,8 @@ function applyOne(s: ConversationState, turnId: string, stored: StoredEvent): Co
         next = { ...next, menuItems };
       }
       if (e.tool === 'build_cart' && e.status === 'done' && Array.isArray(data.items)) {
-        const cart: CartCardData = { cartId: String(data.cartId ?? stored.seq), items: data.items };
+        const items = data.items.map(({ imageUrl, ...it }: any) => ({ ...it, ...imageOf(imageUrl) }));
+        const cart: CartCardData = { cartId: String(data.cartId ?? stored.seq), items };
         next = updateTurn(next, turnId, (t) => ({ ...t, carts: [...t.carts, cart] }));
       }
       if (e.tool === 'build_cart' && e.status === 'failed' && data.needsChoice) {

@@ -1,13 +1,34 @@
 // Restaurant, cart and choice cards. Display only: they show what the server
 // returned. A choice button sends the customer's pick as their next message;
-// nothing is ever pre-selected.
+// nothing is ever pre-selected. Thumbnails come from display data the model
+// never sees.
 
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { CartCardData, ChoicePrompt, RestaurantCardData } from '../logic/conversation';
-import { choicesText, naira } from '../logic/format';
+import { choicesText, imageSource, naira } from '../logic/format';
 import { useAssistantTheme } from './theme';
+
+/** The API URL that relative image paths resolve against (FloatingAssistant provides it). */
+export const ImageApiContext = createContext('');
+
+/** A card thumbnail, or the card's icon when there is no usable image or it fails to load. Never an empty slot. */
+export function Thumb({ url, icon, width, height, radius = 8 }: { url?: string; icon: keyof typeof Ionicons.glyphMap; width: number; height: number; radius?: number }) {
+  const { colors } = useAssistantTheme();
+  const src = imageSource(url, useContext(ImageApiContext));
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  const box = { width, height, borderRadius: radius, backgroundColor: colors.accent };
+  if (!src || failed) {
+    return (
+      <View style={[box, styles.thumbIcon]}>
+        <Ionicons name={icon} size={Math.min(20, height * 0.5)} color={colors.primary} />
+      </View>
+    );
+  }
+  return <Image source={{ uri: src }} style={box} resizeMode="cover" onError={() => setFailed(true)} accessibilityIgnoresInvertColors />;
+}
 
 export function RestaurantCards({ restaurants }: { restaurants: RestaurantCardData[] }) {
   const { colors, fonts } = useAssistantTheme();
@@ -16,7 +37,7 @@ export function RestaurantCards({ restaurants }: { restaurants: RestaurantCardDa
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll} contentContainerStyle={styles.hRow}>
       {restaurants.map((r) => (
         <View key={r.id} style={[styles.restaurant, { borderColor: colors.greyLight, backgroundColor: colors.white }]}>
-          <Ionicons name="restaurant-outline" size={16} color={colors.primary} />
+          <Thumb url={r.imageUrl} icon="restaurant-outline" width={128} height={68} />
           <Text numberOfLines={2} style={[styles.restaurantName, { fontFamily: fonts.semibold, color: colors.black }]}>
             {r.name}
           </Text>
@@ -36,13 +57,16 @@ export function CartCard({ cart }: { cart: CartCardData }) {
         <Text style={[styles.cardTitle, { fontFamily: fonts.semibold, color: colors.black }]}>Cart</Text>
       </View>
       {cart.items.map((it, i) => (
-        <View key={i} style={styles.line}>
-          <Text style={[styles.body, { fontFamily: fonts.medium, color: colors.black }]}>
-            {it.quantity} x {it.name}
-          </Text>
-          {it.choices?.length ? (
-            <Text style={[styles.small, { fontFamily: fonts.regular, color: colors.greyDark }]}>{choicesText(it.choices)}</Text>
-          ) : null}
+        <View key={i} style={[styles.line, styles.thumbRow]}>
+          <Thumb url={it.imageUrl} icon="fast-food-outline" width={40} height={40} />
+          <View style={styles.thumbText}>
+            <Text style={[styles.body, { fontFamily: fonts.medium, color: colors.black }]}>
+              {it.quantity} x {it.name}
+            </Text>
+            {it.choices?.length ? (
+              <Text style={[styles.small, { fontFamily: fonts.regular, color: colors.greyDark }]}>{choicesText(it.choices)}</Text>
+            ) : null}
+          </View>
         </View>
       ))}
       <Text style={[styles.small, { fontFamily: fonts.regular, color: colors.greyMedium, marginTop: 4 }]}>Prices come from the server quote.</Text>
@@ -90,6 +114,9 @@ const styles = StyleSheet.create({
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
   cardTitle: { fontSize: 14 },
   line: { marginBottom: 4 },
+  thumbRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  thumbText: { flex: 1 },
+  thumbIcon: { alignItems: 'center', justifyContent: 'center' },
   body: { fontSize: 14, lineHeight: 19 },
   small: { fontSize: 12, lineHeight: 16 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },

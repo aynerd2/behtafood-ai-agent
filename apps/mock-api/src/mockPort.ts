@@ -103,7 +103,7 @@ export class MockBehtafoodPort implements BehtafoodPort {
       .filter(({ s }) => words.length === 0 || s > 0)
       .sort((a, b) => b.s - a.s)
       .slice(0, query.limit)
-      .map(({ r }) => ({ id: r.id, name: r.name, cuisines: r.cuisines, deliveryFeeNaira: r.deliveryFeeNaira, description: r.description }));
+      .map(({ r }) => ({ id: r.id, name: r.name, cuisines: r.cuisines, deliveryFeeNaira: r.deliveryFeeNaira, description: r.description, imageUrl: r.coverUrl }));
   }
 
   async getMenu(_ctx: CustomerContext, restaurantId: string): Promise<MenuItemSummary[]> {
@@ -119,6 +119,7 @@ export class MockBehtafoodPort implements BehtafoodPort {
         available: m.available,
         description: m.description,
         ...(m.choices ? { choices: structuredClone(m.choices) } : {}),
+        imageUrl: m.imageUrl,
       }));
   }
 

@@ -29,7 +29,7 @@ This repo holds `agent-core`, `assistant-ui` and a mock API. Behtafood's private
 
 ## Mock API (`apps/mock-api`)
 
-`npm run mock-api` serves the same agent routes as the private backend, over fake data. Every agent route returns 404 unless the agent is enabled. Authenticate with `Authorization: Bearer demo-token-ada` (₦15,000 wallet) or `demo-token-tunde` (₦800, for the low-balance case).
+`npm run mock-api` serves the same agent routes as the private backend, over fake data. It also serves the demo food images at `/assets/food/<file>.jpg` (credits in `assets/food/CREDITS.md`). Every agent route returns 404 unless the agent is enabled. Authenticate with `Authorization: Bearer demo-token-ada` (₦15,000 wallet) or `demo-token-tunde` (₦800, for the low-balance case).
 
 | Route | Purpose |
 |---|---|

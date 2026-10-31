@@ -92,7 +92,7 @@ async function placedOrder(ctx = ADA) {
   const clock = new FakeClock();
   const port = new MockBehtafoodPort(clock.fn);
   const proposals = new ProposalStore(port, { clock: clock.fn });
-  const cart: Cart = { restaurantId: 'rst_spice', lines: [{ itemId: 'itm_jollof', quantity: 1 }] };
+  const cart: Cart = { restaurantId: 'rst_fountain', lines: [{ itemId: 'itm_akara', quantity: 1 }] };
   const p = proposals.create(ctx, { sessionId: 's', cart, quote: await port.quoteOrder(ctx, cart) });
   const r = await proposals.approve(ctx, p.id);
   assert.equal(r.status, 'placed');
