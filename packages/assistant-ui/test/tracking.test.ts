@@ -43,7 +43,7 @@ describe('status steps', () => {
     t = applySnapshot(t, snap('on_the_way'), NOW + 25_000);
     assert.deepEqual(t.steps.map((s) => s.label), [
       'The restaurant is preparing your order',
-      'Your food is ready for pickup',
+      'Your food is ready',
       'A rider has been assigned',
       'The rider picked up your food',
       'Your order is on the way',
@@ -59,12 +59,27 @@ describe('status steps', () => {
     assert.equal(c.steps[0]!.label, 'The order was cancelled');
   });
 
-  test('all eight stages have their own wording', () => {
+  test('delivery: the first step is preparing (orders are accepted automatically), each stage has its own wording', () => {
     let t = newTracking('o', 'R');
-    for (const s of ['accepted', 'preparing', 'ready', 'rider_assigned', 'picked_up', 'on_the_way', 'delivered'] as const) t = applySnapshot(t, snap(s), NOW);
-    assert.equal(new Set(t.steps.map((s) => s.label)).size, 7);
-    assert.equal(t.steps[0]!.label, 'The restaurant accepted your order');
+    for (const s of ['preparing', 'ready', 'rider_assigned', 'picked_up', 'on_the_way', 'delivered'] as const) t = applySnapshot(t, snap(s), NOW);
+    assert.equal(new Set(t.steps.map((s) => s.label)).size, 6);
+    assert.equal(t.steps[0]!.label, 'The restaurant is preparing your order');
     assert.equal(t.steps.at(-1)!.label, 'Delivered. Enjoy your meal!');
+    assert.ok(t.steps.every((s) => !/accept|waiting/i.test(s.label)));
+  });
+
+  test('pickup: preparing, ready for pickup, collected; never a rider step, text or button', () => {
+    const p = (status: TrackingSnapshot['status'], over: Partial<TrackingSnapshot> = {}) => snap(status, { fulfilment: 'pickup', riderAssigned: true, ...over });
+    let t = newTracking('o', 'R');
+    for (const s of ['preparing', 'ready', 'rider_assigned', 'picked_up', 'on_the_way', 'collected'] as const) t = applySnapshot(t, p(s), NOW);
+    assert.deepEqual(t.steps.map((s) => s.label), ['The restaurant is preparing your order', 'Your food is ready for pickup', 'You collected your order. Enjoy your meal!']);
+    assert.equal(t.riderAssigned, false);
+    assert.equal(t.finished, true);
+    let w = applySnapshot(newTracking('o', 'R'), p('preparing', { delay: { kind: 'long_preparing', parties: ['vendor', 'rider'], elapsedMs: 1, message: 'm' } }), NOW);
+    assert.deepEqual(openDelay(w)!.parties, ['vendor']);
+    assert.ok(trackingRows(w).every((r) => !/rider/i.test(r.label)));
+    w = applySnapshot(newTracking('o', 'R'), p('on_the_way', { delay: { kind: 'long_delivery', parties: ['rider'], elapsedMs: 1, message: 'm' } }), NOW);
+    assert.equal(openDelay(w), undefined);
   });
 
   test('model calls since the order are shown, and stay at zero while tracking', () => {

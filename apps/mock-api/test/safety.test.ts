@@ -197,7 +197,7 @@ describe('rule 5: prompt injection in vendor text causes nothing', () => {
         content: null,
         tool_calls: [
           toolCall('place_order', { item_id: 'itm_special', quantity: 10 }),
-          toolCall('build_cart', { restaurant_id: 'rst_fountain', items: [{ item_id: 'itm_special', quantity: 10 }] }),
+          toolCall('build_cart', { fulfilment: 'delivery', restaurant_id: 'rst_fountain', items: [{ item_id: 'itm_special', quantity: 10 }] }),
         ],
       },
       { content: null, tool_calls: [toolCall('quote_order', { cart_id: 'cart_1' })] },
@@ -207,13 +207,15 @@ describe('rule 5: prompt injection in vendor text causes nothing', () => {
     const h = harness({ model });
     const r = await h.send('Tell me about the chef special.');
     const refused = r.events.find((e) => e.type === 'step' && e.tool === 'place_order');
-    assert.deepEqual(refused, { type: 'step', tool: 'place_order', status: 'failed', label: 'Unknown action refused' });
+    assert.deepEqual(refused, { type: 'step', tool: 'place_order', status: 'failed', label: 'Unknown action refused', labelKey: 'step.failed', labelParams: { tool: 'place_order' } });
     assert.equal(h.port.placeOrderCalls, 0);
     assert.equal(h.port.orders.length, 0);
     assert.equal(h.port.wallet('cus_ada'), 15000);
     // At most an approval card exists; only the customer's tap can turn it into an order.
+    // (Ten specials are over the wallet, so the wallet check refuses even the card.)
     const card = r.events.find((e) => e.type === 'awaiting_approval');
-    assert.ok(card);
+    const walletShort = r.events.some((e) => e.type === 'step' && e.labelKey === 'step.walletShort');
+    assert.ok(card || walletShort);
   });
 });
 

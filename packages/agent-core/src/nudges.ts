@@ -92,7 +92,8 @@ export class NudgeService {
       throw err;
     }
     if (FINAL_ORDER_STATUSES.includes(status.status)) return refuse('NOT_ACTIVE');
-    if (req.party === 'rider' && !status.riderAssigned) return refuse('NO_RIDER');
+    // A pickup order has no rider, whatever else the record says.
+    if (req.party === 'rider' && (status.fulfilment === 'pickup' || !status.riderAssigned)) return refuse('NO_RIDER');
 
     const sent = this.log.filter((l) => l.orderId === req.orderId && l.customerId === ctx.customerId && l.outcome === 'sent');
     if (sent.length >= NUDGE_MAX_PER_ORDER) return refuse('ORDER_LIMIT');

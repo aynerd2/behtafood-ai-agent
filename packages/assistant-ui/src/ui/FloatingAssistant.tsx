@@ -24,7 +24,8 @@ import { ChatPanel } from './ChatPanel';
 import { clearGuideHighlight, setGuideHighlight, setGuideTouchHandler } from './guideHighlights';
 import { GuidedPanel } from './GuidedPanel';
 import type { AssistantLanguage } from '../logic/language';
-import { useAssistantController } from './hooks';
+import { useAssistantController, useAssistantState } from './hooks';
+import { t } from '../i18n/translations';
 import { AssistantThemeProvider, useAssistantTheme, type AssistantThemeInput } from './theme';
 
 export interface FloatingAssistantProps {
@@ -32,6 +33,8 @@ export interface FloatingAssistantProps {
   apiUrl: string;
   /** The signed-in customer's token. */
   getToken: () => Promise<string | null>;
+  /** The saved address selected in the app (its id), for delivery fee questions. */
+  getAddressId?: () => string | null | undefined;
   /** Show the floating button (the panel, once open, stays open). */
   visible: boolean;
   /** Signed in as a customer. When false, a tap calls onSignInRequired instead. */
@@ -67,6 +70,7 @@ export function FloatingAssistant(props: FloatingAssistantProps) {
 function FloatingAssistantInner({
   apiUrl,
   getToken,
+  getAddressId,
   visible,
   canUse,
   onSignInRequired,
@@ -80,7 +84,8 @@ function FloatingAssistantInner({
   bottomOffset = 96,
 }: FloatingAssistantProps) {
   const { colors } = useAssistantTheme();
-  const controller = useAssistantController({ apiUrl, getToken, language: initialLanguage });
+  const controller = useAssistantController({ apiUrl, getToken, getAddressId, language: initialLanguage });
+  const language = useAssistantState(controller).language;
   const guidedAvailable = guidedEnabled && !!onNavigate;
   const [open, setOpen] = useState(false);
   const [mode, setModeState] = useState<GuideMode>(guidedAvailable ? initialMode : 'chat');
@@ -166,7 +171,7 @@ function FloatingAssistantInner({
         <Pressable
           onPress={onPress}
           accessibilityRole="button"
-          accessibilityLabel="Open the Behtafood ordering assistant"
+          accessibilityLabel={t(language, 'fab.open')}
           style={({ pressed }) => [styles.fab, { bottom: bottomOffset, backgroundColor: colors.primary }, pressed && styles.pressed]}
         >
           <Ionicons name="sparkles" size={24} color={colors.white} />

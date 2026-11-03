@@ -19,6 +19,11 @@ export interface MockRestaurant {
   description?: string;
   logoUrl: string;
   coverUrl: string;
+  /** Fulfilment the restaurant offers (both by default). */
+  deliveryEnabled?: boolean;
+  pickupEnabled?: boolean;
+  /** False: no map location, so it cannot be priced for delivery. */
+  hasCoordinates?: boolean;
 }
 
 export interface MockMenuItem {
@@ -40,7 +45,14 @@ export interface MockCustomer {
   name: string;
   token: string;
   walletNaira: number;
+  /** False: no saved delivery address (pickup only). */
+  hasAddress?: boolean;
+  /** Saved addresses (ignored when hasAddress is false). distanceFeeNaira stands in for the per-km part. */
+  addresses?: { id: string; label: string; text: string; isDefault: boolean; distanceKm: number; distanceFeeNaira: number }[];
 }
+
+const HOME = { id: 'adr_home', label: 'Home', text: '12 Adebayo Road, Ado-Ekiti', isDefault: true, distanceKm: 1.5, distanceFeeNaira: 0 };
+const HOSTEL = { id: 'adr_hostel', label: 'Hostel', text: 'EKSU Hostel, Ado-Ekiti', isDefault: false, distanceKm: 4.2, distanceFeeNaira: 150 };
 
 const img = (file: string) => `/assets/food/${file}`;
 const size = (large: number, regular = 'Regular', big = 'Large'): ChoiceGroup[] => [
@@ -133,7 +145,7 @@ export function seedMenu(): MockMenuItem[] {
 
 export function seedCustomers(): MockCustomer[] {
   return [
-    { id: 'cus_ada', name: 'Ada (demo)', token: 'demo-token-ada', walletNaira: 15000 },
-    { id: 'cus_tunde', name: 'Tunde (demo, low balance)', token: 'demo-token-tunde', walletNaira: 800 },
+    { id: 'cus_ada', name: 'Ada (demo)', token: 'demo-token-ada', walletNaira: 15000, addresses: [HOME, HOSTEL] },
+    { id: 'cus_tunde', name: 'Tunde (demo, low balance)', token: 'demo-token-tunde', walletNaira: 800, addresses: [HOME] },
   ];
 }

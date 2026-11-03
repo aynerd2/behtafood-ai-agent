@@ -16,11 +16,16 @@ import {
   type PlaceWalletOrderRequest,
   type Quote,
   type RestaurantSummary,
+  type Fulfilment,
+  type FulfilmentOptions,
+  type DeliveryFeeQuote,
+  type SavedAddress,
 } from '@behtafood-agent/agent-core';
 import { seedCustomers, seedMenu, seedRestaurants, type MockCustomer, type MockMenuItem, type MockRestaurant } from './data';
 // ---- mock data types ----
 interface MockOrder extends PlacedOrder {
   customerId: string;
+  fulfilment: Fulfilment;
   lines: { itemId: string; name: string; quantity: number; choices?: { group: string; option: string }[] }[];
   updatedAt: string;
   riderAssigned: boolean;
@@ -53,6 +58,8 @@ export class MockBehtafoodPort implements BehtafoodPort {
   failLookups = 0;
   /** Test hook: sendNudge fails (push service down). */
   failNudges = false;
+  /** Demo control: a delivery surcharge (like a rain surge) on every delivery fee, checkout included. */
+  surge: { amountNaira: number; reason: string } | null = null;
   #seq = 0;
 
   constructor(readonly clock: () => number = Date.now) {}
@@ -82,9 +89,11 @@ export class MockBehtafoodPort implements BehtafoodPort {
   advanceOrder(orderId: string, status: OrderStatus): void {
     const o = this.orders.find((x) => x.orderId === orderId);
     if (!o) throw new Error(`no order ${orderId}`);
-    o.status = status;
+    // Like the backend: a pickup order has no rider stages, and is collected rather than delivered.
+    if (o.fulfilment === 'pickup' && ['rider_assigned', 'picked_up', 'on_the_way'].includes(status)) throw new Error('A pickup order has no rider');
+    o.status = o.fulfilment === 'pickup' && status === 'delivered' ? 'collected' : status;
     o.updatedAt = this.#now();
-    if (status === 'rider_assigned' || status === 'picked_up' || status === 'on_the_way' || status === 'delivered') o.riderAssigned = true;
+    if (o.fulfilment === 'delivery' && (status === 'rider_assigned' || status === 'picked_up' || status === 'on_the_way' || status === 'delivered')) o.riderAssigned = true;
   }
 
   // ---- BehtafoodPort ----
@@ -104,6 +113,16 @@ export class MockBehtafoodPort implements BehtafoodPort {
       .sort((a, b) => b.s - a.s)
       .slice(0, query.limit)
       .map(({ r }) => ({ id: r.id, name: r.name, cuisines: r.cuisines, deliveryFeeNaira: r.deliveryFeeNaira, description: r.description, imageUrl: r.coverUrl }));
+  }
+
+  async getFulfilmentOptions(ctx: CustomerContext, restaurantId: string): Promise<FulfilmentOptions> {
+    const r = this.restaurants.find((x) => x.id === restaurantId);
+    if (!r) throw new PortError('NOT_FOUND', 'Restaurant not found');
+    const pickup = r.pickupEnabled !== false;
+    if (r.deliveryEnabled === false) return { delivery: false, pickup, deliveryUnavailable: 'restaurant' };
+    if (r.hasCoordinates === false) return { delivery: false, pickup, deliveryUnavailable: 'no_coordinates' };
+    if (this.#customer(ctx.customerId).hasAddress === false) return { delivery: false, pickup, deliveryUnavailable: 'no_address' };
+    return { delivery: true, pickup };
   }
 
   async getMenu(_ctx: CustomerContext, restaurantId: string): Promise<MenuItemSummary[]> {
@@ -140,10 +159,13 @@ export class MockBehtafoodPort implements BehtafoodPort {
       }));
   }
 
-  async quoteOrder(_ctx: CustomerContext, cart: Cart): Promise<Quote> {
+  async quoteOrder(ctx: CustomerContext, cart: Cart): Promise<Quote> {
     const r = this.restaurants.find((x) => x.id === cart.restaurantId);
     if (!r) throw new PortError('NOT_FOUND', 'Restaurant not found');
     if (!this.#isOpen(r)) throw new PortError('RESTAURANT_CLOSED', `${r.name} is closed right now`);
+    const fulfilment: Fulfilment = cart.fulfilment ?? 'delivery';
+    const options = await this.getFulfilmentOptions(ctx, r.id);
+    if (!options[fulfilment]) throw new PortError('INVALID_CART', `${r.name} cannot do ${fulfilment} for this order`);
     if (cart.lines.length === 0) throw new PortError('INVALID_CART', 'The cart is empty');
     const lines = cart.lines.map((l) => {
       const m = this.menu.find((x) => x.id === l.itemId && x.restaurantId === r.id);
@@ -163,14 +185,17 @@ export class MockBehtafoodPort implements BehtafoodPort {
       };
     });
     const subtotal = lines.reduce((s, l) => s + l.lineTotalNaira, 0);
+    // Like checkout: pickup has no delivery fee.
+    const fee = fulfilment === 'pickup' ? 0 : this.#deliveryFee(r, this.#addresses(ctx.customerId).find((a) => a.isDefault)).totalFeeNaira;
     return {
       restaurantId: r.id,
       restaurantName: r.name,
       lines,
       subtotalNaira: subtotal,
-      deliveryFeeNaira: r.deliveryFeeNaira,
+      deliveryFeeNaira: fee,
       discountNaira: 0,
-      totalNaira: subtotal + r.deliveryFeeNaira,
+      totalNaira: subtotal + fee,
+      fulfilment,
     };
   }
 
@@ -198,9 +223,11 @@ export class MockBehtafoodPort implements BehtafoodPort {
       reference: `BF-${String(1000 + this.#seq)}`,
       checkoutSessionId: req.checkoutSessionId,
       customerId: ctx.customerId,
+      fulfilment: quote.fulfilment,
       restaurantId: quote.restaurantId,
       totalNaira: quote.totalNaira,
-      status: 'pending',
+      // Orders are accepted automatically: the first stage is preparing.
+      status: 'preparing',
       createdAt: now,
       updatedAt: now,
       riderAssigned: false,
@@ -231,7 +258,40 @@ export class MockBehtafoodPort implements BehtafoodPort {
   async getOrderStatus(ctx: CustomerContext, orderId: string): Promise<OrderStatusInfo> {
     const o = this.orders.find((x) => x.orderId === orderId && x.customerId === ctx.customerId);
     if (!o) throw new PortError('NOT_FOUND', 'Order not found');
-    return { orderId: o.orderId, reference: o.reference, status: o.status, updatedAt: o.updatedAt, riderAssigned: o.riderAssigned };
+    return { orderId: o.orderId, reference: o.reference, status: o.status, updatedAt: o.updatedAt, riderAssigned: o.riderAssigned, fulfilment: o.fulfilment };
+  }
+
+  async getSavedAddresses(ctx: CustomerContext): Promise<SavedAddress[]> {
+    return this.#addresses(ctx.customerId).map(({ id, label, text, isDefault }) => ({ id, label, text, isDefault }));
+  }
+
+  async quoteDeliveryFee(ctx: CustomerContext, restaurantId: string, addressId: string): Promise<DeliveryFeeQuote> {
+    const r = this.restaurants.find((x) => x.id === restaurantId);
+    if (!r) throw new PortError('NOT_FOUND', 'Restaurant not found');
+    const address = this.#addresses(ctx.customerId).find((a) => a.id === addressId);
+    if (!address) throw new PortError('NO_ADDRESS', 'That address is not one of yours.');
+    return { ...this.#deliveryFee(r, address), restaurantId: r.id, restaurantName: r.name, pickupAvailable: r.pickupEnabled !== false };
+  }
+
+  #addresses(customerId: string) {
+    const c = this.#customer(customerId);
+    return c.hasAddress === false ? [] : (c.addresses ?? []);
+  }
+
+  /** The one fee rule, shared by the checkout quote and the fee tool (like the backend's resolveOrderCharge). */
+  #deliveryFee(r: MockRestaurant, address: { distanceKm: number; distanceFeeNaira: number } | undefined) {
+    const base = r.deliveryFeeNaira;
+    const perKm = address?.distanceFeeNaira ?? 0;
+    const surge = this.surge?.amountNaira ?? 0;
+    return {
+      inRange: true,
+      distanceKm: address?.distanceKm ?? 0,
+      baseFeeNaira: base,
+      perKmFeeNaira: perKm,
+      surgeNaira: surge,
+      surgeReasons: this.surge ? [this.surge.reason] : [],
+      totalFeeNaira: base + perKm + surge,
+    };
   }
 
   async sendNudge(ctx: CustomerContext, req: { orderId: string; party: NudgeParty; message: string }): Promise<void> {

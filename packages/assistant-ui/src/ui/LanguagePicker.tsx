@@ -5,33 +5,37 @@ import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LANGUAGE_OPTIONS, type AssistantLanguage } from '../logic/language';
+import { LANGUAGE_NAMES } from '../i18n/translations';
+import { useI18n } from './i18n';
 import { useAssistantTheme } from './theme';
-
-const SHORT: Record<AssistantLanguage, string> = { auto: 'Auto', en: 'English', pcm: 'Pidgin', yo: 'Yoruba', ha: 'Hausa', ig: 'Igbo' };
 
 export function LanguagePicker({ value, onChange, disabled }: { value: AssistantLanguage; onChange: (l: AssistantLanguage) => void; disabled?: boolean }) {
   const { colors, fonts } = useAssistantTheme();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const current = LANGUAGE_OPTIONS.find((o) => o.code === value) ?? LANGUAGE_OPTIONS[0]!;
+  // Language names are shown in their own language; only Auto is translated.
+  const nameOf = (code: AssistantLanguage) => (code === 'auto' ? t('lang.auto') : LANGUAGE_NAMES[code]);
+  const shortOf = (code: AssistantLanguage) => (code === 'auto' ? t('lang.short.auto') : LANGUAGE_NAMES[code]);
   return (
     <>
       <Pressable
         onPress={() => setOpen(true)}
         disabled={disabled}
         accessibilityRole="button"
-        accessibilityLabel={`Reply language: ${current.label}. Change`}
+        accessibilityLabel={t('lang.button', { name: nameOf(current.code) })}
         hitSlop={6}
         style={({ pressed }) => [styles.pill, { borderColor: colors.greyLight, backgroundColor: pressed ? colors.accent : colors.offWhite, opacity: disabled ? 0.5 : 1 }]}
       >
         <Ionicons name="language-outline" size={14} color={colors.primary} />
-        <Text style={[styles.pillText, { fontFamily: fonts.medium, color: colors.black }]}>{SHORT[current.code]}</Text>
+        <Text style={[styles.pillText, { fontFamily: fonts.medium, color: colors.black }]}>{shortOf(current.code)}</Text>
         <Ionicons name="chevron-down" size={12} color={colors.greyDark} />
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setOpen(false)} accessibilityLabel="Close the language list">
+        <Pressable style={styles.backdrop} onPress={() => setOpen(false)} accessibilityLabel={t('lang.close')}>
           {/* Swallows taps inside the list so only the backdrop closes it. */}
           <Pressable onPress={() => {}} style={[styles.sheet, { backgroundColor: colors.white }]} accessibilityRole="menu">
-            <Text style={[styles.sheetTitle, { fontFamily: fonts.semibold, color: colors.black }]}>Reply language</Text>
+            <Text style={[styles.sheetTitle, { fontFamily: fonts.semibold, color: colors.black }]}>{t('lang.title')}</Text>
             {LANGUAGE_OPTIONS.map((o) => {
               const on = o.code === value;
               return (
@@ -43,13 +47,13 @@ export function LanguagePicker({ value, onChange, disabled }: { value: Assistant
                   }}
                   accessibilityRole="menuitem"
                   accessibilityState={{ selected: on }}
-                  accessibilityLabel={`${o.label}${o.beta ? ', beta' : ''}`}
+                  accessibilityLabel={o.beta ? `${nameOf(o.code)}, ${t('lang.beta')}` : nameOf(o.code)}
                   style={({ pressed }) => [styles.option, { backgroundColor: on ? colors.accent : pressed ? colors.offWhite : 'transparent' }]}
                 >
-                  <Text style={[styles.optionText, { fontFamily: on ? fonts.semibold : fonts.regular, color: colors.black }]}>{o.label}</Text>
+                  <Text style={[styles.optionText, { fontFamily: on ? fonts.semibold : fonts.regular, color: colors.black }]}>{nameOf(o.code)}</Text>
                   {o.beta ? (
                     <View style={[styles.beta, { borderColor: colors.greyMedium }]}>
-                      <Text style={[styles.betaText, { fontFamily: fonts.medium, color: colors.greyDark }]}>beta</Text>
+                      <Text style={[styles.betaText, { fontFamily: fonts.medium, color: colors.greyDark }]}>{t('lang.beta')}</Text>
                     </View>
                   ) : null}
                   {on ? <Ionicons name="checkmark" size={18} color={colors.primary} /> : null}
@@ -57,7 +61,7 @@ export function LanguagePicker({ value, onChange, disabled }: { value: Assistant
               );
             })}
             <Text style={[styles.note, { fontFamily: fonts.regular, color: colors.greyDark }]}>
-              Beta languages are tested by us, not yet checked by native speakers. Buttons and step names stay in English.
+              {t('lang.betaHint')}
             </Text>
           </Pressable>
         </Pressable>

@@ -3,9 +3,11 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { GuideMode } from '../logic/guidedMode';
+import { useI18n } from './i18n';
 import { useAssistantTheme } from './theme';
 
 export function ModeToggle({ mode, onChange, compact = false }: { mode: GuideMode; onChange: (m: GuideMode) => void; compact?: boolean }) {
+  const { t } = useI18n();
   const { colors, fonts } = useAssistantTheme();
   const option = (m: GuideMode, label: string) => {
     const on = mode === m;
@@ -24,8 +26,8 @@ export function ModeToggle({ mode, onChange, compact = false }: { mode: GuideMod
   };
   return (
     <View style={[styles.wrap, { borderColor: colors.primary }]}>
-      {option('chat', 'Chat')}
-      {option('guided', 'Guided')}
+      {option('chat', t('mode.chat'))}
+      {option('guided', t('mode.guided'))}
     </View>
   );
 }

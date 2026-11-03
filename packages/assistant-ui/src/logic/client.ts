@@ -48,6 +48,8 @@ export interface AgentClientOptions {
   apiUrl: string;
   /** The signed-in customer's token, or null when signed out. */
   getToken: () => Promise<string | null>;
+  /** The saved address selected in the app, sent with each chat message for fee questions. The server only uses it if it is the customer's own. */
+  getAddressId?: () => string | null | undefined;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }
@@ -104,13 +106,16 @@ export function createAgentClient(opts: AgentClientOptions): AgentClient {
   }
 
   return {
-    chat: (text, sessionId, imageDataUrl, language) =>
-      request('POST', '/chat', {
+    chat: (text, sessionId, imageDataUrl, language) => {
+      const addressId = opts.getAddressId?.();
+      return request('POST', '/chat', {
         text,
+        ...(addressId ? { addressId } : {}),
         ...(sessionId ? { sessionId } : {}),
         ...(imageDataUrl ? { imageDataUrl } : {}),
         language: language ?? 'auto',
-      }),
+      });
+    },
     events: (runId, after) => request('GET', `/runs/${encodeURIComponent(runId)}/events?after=${after}`),
     approve: (proposalId) => request('POST', '/approve', { proposalId }),
     cancel: (proposalId) => request('POST', '/cancel', { proposalId }),

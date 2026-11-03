@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { PHOTO_JPEG_QUALITY, PHOTO_MAX_EDGE, checkPhoto } from '../logic/photo';
+import { PREVIEW_SIZE, REMOVE_BUTTON_SIZE } from '../logic/photoLayout';
+import { useI18n } from './i18n';
 import { useAssistantTheme } from './theme';
 
 // Draws the photo onto a canvas at the smaller size and returns a JPEG.
@@ -43,6 +45,7 @@ export interface PhotoButtonProps {
 /** The attach button, plus the invisible resizer while a photo is being prepared. */
 export function PhotoButton({ disabled, onPhoto, onError }: PhotoButtonProps) {
   const { colors } = useAssistantTheme();
+  const { t } = useI18n();
   const [source, setSource] = useState<string | null>(null);
   const web = useRef<WebView>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -54,7 +57,7 @@ export function PhotoButton({ disabled, onPhoto, onError }: PhotoButtonProps) {
     setSource(null);
     if (result && checkPhoto(result)) onPhoto(result);
     else if (original && checkPhoto(original)) onPhoto(original); // resizing failed, but the original already fits
-    else onError("That photo couldn't be prepared. Please try another one.");
+    else onError(t('photo.prepareFailed'));
   };
 
   const pick = async () => {
@@ -66,7 +69,7 @@ export function PhotoButton({ disabled, onPhoto, onError }: PhotoButtonProps) {
       setSource(`data:${mime};base64,${asset.base64}`);
       timer.current = setTimeout(() => done(null), RESIZE_TIMEOUT_MS);
     } catch {
-      onError("Couldn't open your photos.");
+      onError(t('photo.openFailed'));
     }
   };
 
@@ -91,7 +94,7 @@ export function PhotoButton({ disabled, onPhoto, onError }: PhotoButtonProps) {
         onPress={pick}
         disabled={disabled || busy}
         accessibilityRole="button"
-        accessibilityLabel="Attach a food photo"
+        accessibilityLabel={t('photo.attach')}
         style={[styles.button, { borderColor: colors.greyLight, backgroundColor: colors.offWhite, opacity: disabled ? 0.4 : 1 }]}
       >
         {busy ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="image-outline" size={20} color={colors.primary} />}
@@ -105,25 +108,26 @@ export function PhotoButton({ disabled, onPhoto, onError }: PhotoButtonProps) {
   );
 }
 
-/** A small preview of the attached photo, with a remove button. */
+/** The attached photo before sending (96 pt), with a clear remove button. */
 export function PhotoPreview({ photo, onRemove }: { photo: string; onRemove: () => void }) {
   const { colors, fonts } = useAssistantTheme();
+  const { t } = useI18n();
   return (
     <View style={styles.previewRow}>
       <View>
-        <Image source={{ uri: photo }} style={[styles.thumb, { borderColor: colors.greyLight }]} accessibilityLabel="Attached photo" />
+        <Image source={{ uri: photo }} style={[styles.thumb, { borderColor: colors.greyLight }]} accessibilityLabel={t('photo.attached')} />
         <Pressable
           onPress={onRemove}
           accessibilityRole="button"
-          accessibilityLabel="Remove the photo"
-          hitSlop={8}
-          style={[styles.remove, { backgroundColor: colors.black }]}
+          accessibilityLabel={t('photo.remove')}
+          hitSlop={10}
+          style={[styles.remove, { backgroundColor: colors.black, borderColor: colors.white }]}
         >
-          <Ionicons name="close" size={12} color={colors.white} />
+          <Ionicons name="close" size={16} color={colors.white} />
         </Pressable>
       </View>
-      <Text style={{ flex: 1, fontFamily: fonts.regular, fontSize: 12, color: colors.greyDark }}>
-        Photo attached. Add words if you like, then send.
+      <Text style={{ flex: 1, fontFamily: fonts.regular, fontSize: 14, lineHeight: 20, color: colors.greyDark }}>
+        {t('photo.attachedHint')}
       </Text>
     </View>
   );
@@ -132,7 +136,10 @@ export function PhotoPreview({ photo, onRemove }: { photo: string; onRemove: () 
 const styles = StyleSheet.create({
   button: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   hidden: { position: 'absolute', width: 1, height: 1, opacity: 0, left: -10, top: -10 },
-  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingTop: 8 },
-  thumb: { width: 56, height: 56, borderRadius: 10, borderWidth: 1 },
-  remove: { position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingTop: 12 },
+  thumb: { width: PREVIEW_SIZE, height: PREVIEW_SIZE, borderRadius: 14, borderWidth: 1 },
+  remove: {
+    position: 'absolute', top: -8, right: -8, width: REMOVE_BUTTON_SIZE, height: REMOVE_BUTTON_SIZE,
+    borderRadius: REMOVE_BUTTON_SIZE / 2, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+  },
 });

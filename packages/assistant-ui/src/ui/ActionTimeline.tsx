@@ -8,6 +8,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { TimelineRow } from '../logic/conversation';
 import { FadeSlideIn, PopIn } from './motion';
+import { useI18n } from './i18n';
 import { useAssistantTheme } from './theme';
 
 const ICONS = {
@@ -22,13 +23,17 @@ const FAILED_BG = 'rgba(239, 68, 68, 0.08)';
 
 export function ActionTimeline({ rows, animate = true }: { rows: TimelineRow[]; animate?: boolean }) {
   const { colors, fonts } = useAssistantTheme();
+  const { step } = useI18n();
   if (rows.length === 0) return null;
   const tint = { done: colors.success, failed: colors.error, awaiting: colors.primary, info: colors.greyMedium, working: colors.primary };
   return (
     <View style={[styles.box, { backgroundColor: colors.offWhite, borderColor: colors.greyLight }]} accessibilityRole="summary">
-      {rows.map((r) => (
+      {rows.map((r) => {
+        // Server steps carry a key; app rows are English text shown in the chosen language.
+        const label = step(r);
+        return (
         <FadeSlideIn key={r.key} animate={animate}>
-          <View style={[styles.row, r.status === 'failed' && { backgroundColor: FAILED_BG }]} accessibilityLabel={`${r.status}: ${r.label}`}>
+          <View style={[styles.row, r.status === 'failed' && { backgroundColor: FAILED_BG }]} accessibilityLabel={label}>
             <View style={styles.icon}>
               {r.status === 'working' ? (
                 <ActivityIndicator size="small" color={tint.working} />
@@ -49,11 +54,12 @@ export function ActionTimeline({ rows, animate = true }: { rows: TimelineRow[]; 
                 },
               ]}
             >
-              {r.label}
+              {label}
             </Text>
           </View>
         </FadeSlideIn>
-      ))}
+        );
+      })}
     </View>
   );
 }

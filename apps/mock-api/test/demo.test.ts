@@ -21,7 +21,7 @@ describe('demo path: ask, options, pick, quote, approve, one order', () => {
     assert.match(reply1.text, /1\./);
     assert.ok(!t1.events.some((e) => e.type === 'awaiting_approval'), 'no card before the customer picks');
 
-    const t2 = await h.send('I will take option 1', t1.sessionId);
+    const t2 = await h.send('I will take option 1, delivered', t1.sessionId);
     const tools2 = t2.events.flatMap((e) => (e.type === 'step' ? [`${e.tool}:${e.status}`] : []));
     assert.deepEqual(tools2, ['build_cart:done', 'quote_order:done', 'propose_order:done']);
     const card = t2.events.find((e) => e.type === 'awaiting_approval');
@@ -38,7 +38,7 @@ describe('demo path: ask, options, pick, quote, approve, one order', () => {
   test('every item id offered exists on the restaurant menu', async () => {
     const h = harness({ model: new ScriptedDemoModel() });
     const t1 = await h.send(DEMO_ASK);
-    const t2 = await h.send('2', t1.sessionId);
+    const t2 = await h.send('2, delivery', t1.sessionId);
     const card = t2.events.find((e) => e.type === 'awaiting_approval');
     assert.ok(card && card.type === 'awaiting_approval');
     const menu = new MockBehtafoodPort().menu;
@@ -77,7 +77,7 @@ describe('timeline', () => {
   test('awaiting approval is its own event, separate from done steps', async () => {
     const h = harness({ model: new ScriptedDemoModel() });
     const t1 = await h.send(DEMO_ASK);
-    const t2 = await h.send('1', t1.sessionId);
+    const t2 = await h.send('1 delivery please', t1.sessionId);
     const types = t2.events.map((e) => e.type);
     assert.ok(types.includes('awaiting_approval'));
     assert.ok(types.indexOf('awaiting_approval') > types.lastIndexOf('step') - 1);
@@ -88,7 +88,7 @@ describe('budget includes the delivery fee', () => {
   test('propose_order refuses a quote over the stated budget', async () => {
     const model = sequenceModel([
       { content: null, tool_calls: [toolCall('search_restaurants', { query: 'rice chicken', budget_naira: 2800 })] },
-      { content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_fountain', items: [{ item_id: 'itm_akara', quantity: 1 }, { item_id: 'itm_agoyin_cafe', quantity: 1 }] })] },
+      { content: null, tool_calls: [toolCall('build_cart', { fulfilment: 'delivery', restaurant_id: 'rst_fountain', items: [{ item_id: 'itm_akara', quantity: 1 }, { item_id: 'itm_agoyin_cafe', quantity: 1 }] })] },
       { content: null, tool_calls: [toolCall('quote_order', { cart_id: 'cart_1' })] },
       { content: null, tool_calls: [toolCall('propose_order', { quote_id: 'quote_1' })] },
       { content: 'That is over your budget.' },

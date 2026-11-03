@@ -16,7 +16,9 @@
     "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json",
     "demo": "node --import tsx apps/mock-api/src/cli.ts --demo",
     "chat": "node --import tsx apps/mock-api/src/cli.ts",
-    "mock-api": "node --import tsx apps/mock-api/src/main.ts --agent-enabled"
+    "mock-api": "node --import tsx apps/mock-api/src/main.ts --agent-enabled",
+    "translations:review": "node --import tsx scripts/translationsReview.ts",
+    "agent:eval": "node --import tsx scripts/eval/run.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

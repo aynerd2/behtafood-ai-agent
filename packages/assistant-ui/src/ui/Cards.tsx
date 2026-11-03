@@ -8,6 +8,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import type { CartCardData, ChoicePrompt, RestaurantCardData } from '../logic/conversation';
 import { choicesText, imageSource, naira } from '../logic/format';
+import { useI18n } from './i18n';
 import { useAssistantTheme } from './theme';
 
 /** The API URL that relative image paths resolve against (FloatingAssistant provides it). */
@@ -32,6 +33,7 @@ export function Thumb({ url, icon, width, height, radius = 8 }: { url?: string; 
 
 export function RestaurantCards({ restaurants }: { restaurants: RestaurantCardData[] }) {
   const { colors, fonts } = useAssistantTheme();
+  const { t } = useI18n();
   if (restaurants.length === 0) return null;
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll} contentContainerStyle={styles.hRow}>
@@ -41,7 +43,7 @@ export function RestaurantCards({ restaurants }: { restaurants: RestaurantCardDa
           <Text numberOfLines={2} style={[styles.restaurantName, { fontFamily: fonts.semibold, color: colors.black }]}>
             {r.name}
           </Text>
-          <Text style={[styles.small, { fontFamily: fonts.regular, color: colors.greyDark }]}>Delivery {naira(r.deliveryFeeNaira)}</Text>
+          <Text style={[styles.small, { fontFamily: fonts.regular, color: colors.greyDark }]}>{t('card.delivery')} {naira(r.deliveryFeeNaira)}</Text>
         </View>
       ))}
     </ScrollView>
@@ -50,11 +52,12 @@ export function RestaurantCards({ restaurants }: { restaurants: RestaurantCardDa
 
 export function CartCard({ cart }: { cart: CartCardData }) {
   const { colors, fonts } = useAssistantTheme();
+  const { t } = useI18n();
   return (
     <View style={[styles.card, { borderColor: colors.greyLight, backgroundColor: colors.white }]}>
       <View style={styles.cardHead}>
         <Ionicons name="cart-outline" size={16} color={colors.primary} />
-        <Text style={[styles.cardTitle, { fontFamily: fonts.semibold, color: colors.black }]}>Cart</Text>
+        <Text style={[styles.cardTitle, { fontFamily: fonts.semibold, color: colors.black }]}>{t('card.cart')}</Text>
       </View>
       {cart.items.map((it, i) => (
         <View key={i} style={[styles.line, styles.thumbRow]}>
@@ -69,17 +72,18 @@ export function CartCard({ cart }: { cart: CartCardData }) {
           </View>
         </View>
       ))}
-      <Text style={[styles.small, { fontFamily: fonts.regular, color: colors.greyMedium, marginTop: 4 }]}>Prices come from the server quote.</Text>
+      <Text style={[styles.small, { fontFamily: fonts.regular, color: colors.greyMedium, marginTop: 4 }]}>{t('card.serverPrices')}</Text>
     </View>
   );
 }
 
 export function ChoiceChips({ prompt, disabled, onPick }: { prompt: ChoicePrompt; disabled: boolean; onPick: (option: string) => void }) {
   const { colors, fonts } = useAssistantTheme();
+  const { t } = useI18n();
   return (
     <View style={[styles.card, { borderColor: colors.primary, backgroundColor: colors.accent }]}>
       <Text style={[styles.body, { fontFamily: fonts.semibold, color: colors.black }]}>
-        Pick a {prompt.group} for {prompt.itemName}
+        {t('card.pickChoice', { group: prompt.group, name: prompt.itemName })}
       </Text>
       <View style={styles.chips}>
         {prompt.options.map((o) => (
@@ -88,7 +92,7 @@ export function ChoiceChips({ prompt, disabled, onPick }: { prompt: ChoicePrompt
             disabled={disabled}
             onPress={() => onPick(o.name)}
             accessibilityRole="button"
-            accessibilityLabel={`${o.name}${o.extraPriceNaira ? `, adds ${naira(o.extraPriceNaira)}` : ''}`}
+            accessibilityLabel={o.extraPriceNaira ? t('card.optionAdds', { name: o.name, amount: naira(o.extraPriceNaira) }) : o.name}
             style={({ pressed }) => [
               styles.chip,
               { borderColor: colors.primary, backgroundColor: colors.white, opacity: disabled ? 0.5 : pressed ? 0.7 : 1 },

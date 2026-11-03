@@ -7,25 +7,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { cardActions, effectiveStatus, minutesLeft, statusMessage, type ApprovalCardState, type ApprovalStatus } from '../logic/approval';
 import { choicesText, naira } from '../logic/format';
 import { Thumb } from './Cards';
+import { useI18n } from './i18n';
 import { useAssistantTheme } from './theme';
+import type { TranslationKey } from '../i18n/translations';
 
-const TITLES: Record<ApprovalStatus, string> = {
-  awaiting: 'Approve your order',
-  approving: 'Placing your order…',
-  placed: 'Order placed',
-  price_changed: 'The price changed',
-  refused: 'Order not placed',
-  expired: 'Quote expired',
-  lost: 'Quote no longer available',
-  superseded: 'Replaced by a newer quote',
-  cancelling: 'Cancelling…',
-  cancelled: 'Cancelled',
-  uncertain: 'Not confirmed yet',
-  checking: 'Checking your order…',
-  not_placed: 'No order was placed',
-  unverified: "Couldn't check your order",
-  failed: 'Order not placed',
-};
 
 export interface ApprovalCardProps {
   card: ApprovalCardState;
@@ -38,9 +23,11 @@ export interface ApprovalCardProps {
 
 export function ApprovalCard({ card, now, onApprove, onCancel, onAskAgain, onOpenOrder }: ApprovalCardProps) {
   const { colors, fonts } = useAssistantTheme();
+  const { t, l } = useI18n();
   const status = effectiveStatus(card, now);
   const actions = cardActions(card, now);
   const p = card.proposal;
+  const pickup = p.fulfilment === 'pickup';
   const message = statusMessage(card, now);
   const dimmed = status === 'superseded' || status === 'cancelled' || status === 'expired' || status === 'lost';
   const accent = status === 'placed' ? colors.success : status === 'refused' || status === 'failed' || status === 'unverified' ? colors.error : colors.primary;
@@ -56,11 +43,15 @@ export function ApprovalCard({ card, now, onApprove, onCancel, onAskAgain, onOpe
     <View style={[styles.card, { borderColor: accent, backgroundColor: colors.white, opacity: dimmed ? 0.7 : 1 }]}>
       <View style={styles.head}>
         <Ionicons name={status === 'placed' ? 'checkmark-circle' : 'receipt-outline'} size={18} color={accent} />
-        <Text style={[styles.title, { fontFamily: fonts.bold, color: colors.black }]}>{TITLES[status]}</Text>
+        <Text style={[styles.title, { fontFamily: fonts.bold, color: colors.black }]}>{t(`card.title.${status}` as TranslationKey)}</Text>
       </View>
       <View style={[styles.thumbRow, { marginBottom: 8 }]}>
         <Thumb url={p.restaurantImageUrl} icon="restaurant-outline" width={28} height={28} radius={6} />
         <Text style={[styles.small, { fontFamily: fonts.medium, color: colors.greyDark }]}>{p.restaurantName}</Text>
+        <View style={[styles.mode, { backgroundColor: colors.accent }]}>
+          <Ionicons name={pickup ? 'bag-handle-outline' : 'bicycle-outline'} size={12} color={colors.primary} />
+          <Text style={[styles.modeText, { fontFamily: fonts.semibold, color: colors.primary }]}>{t(pickup ? 'card.mode.pickup' : 'card.mode.delivery')}</Text>
+        </View>
       </View>
 
       {p.lines.map((l, i) => (
@@ -83,35 +74,37 @@ export function ApprovalCard({ card, now, onApprove, onCancel, onAskAgain, onOpe
       ))}
 
       <View style={[styles.divider, { backgroundColor: colors.greyLight }]} />
-      {row('Food', naira(p.subtotalNaira))}
-      {row('Delivery', naira(p.deliveryFeeNaira))}
-      {p.discountNaira ? row('Discount', `-${naira(p.discountNaira)}`) : null}
-      {card.previousTotalNaira !== undefined && status === 'price_changed' ? row('Was', naira(card.previousTotalNaira)) : null}
-      {row('Total', naira(p.totalNaira), true)}
+      {row(t('card.food'), naira(p.subtotalNaira))}
+      {/* Pickup has no delivery fee; delivery shows the server's fee. */}
+      {pickup ? row(t('card.mode.pickup'), t('card.noFee')) : row(t('card.delivery'), naira(p.deliveryFeeNaira))}
+      {p.discountNaira ? row(t('card.discount'), `-${naira(p.discountNaira)}`) : null}
+      {card.previousTotalNaira !== undefined && status === 'price_changed' ? row(t('card.was'), naira(card.previousTotalNaira)) : null}
+      {row(t('card.total'), naira(p.totalNaira), true)}
+      {p.walletBalanceNaira !== undefined ? row(t('card.walletBalance'), naira(p.walletBalanceNaira)) : null}
       <Text style={[styles.small, { fontFamily: fonts.regular, color: colors.greyMedium, marginTop: 4 }]}>
-        Paid from your Behtafood wallet.{actions.cancel ? ` Valid for ${minutesLeft(card, now)} min.` : ''}
+        {t('card.paidFromWallet')}{actions.cancel ? ` ${t('card.validFor', { minutes: minutesLeft(card, now) })}` : ''}
       </Text>
 
       {status === 'placed' && card.order ? (
-        <Text style={[styles.body, { fontFamily: fonts.semibold, color: colors.success, marginTop: 8 }]}>Your order was placed: {card.order.reference}</Text>
+        <Text style={[styles.body, { fontFamily: fonts.semibold, color: colors.success, marginTop: 8 }]}>{t('msg.placed', { reference: card.order.reference })}</Text>
       ) : null}
       {message && status !== 'placed' ? (
         <Text style={[styles.body, { fontFamily: fonts.regular, color: status === 'refused' || status === 'failed' ? colors.error : colors.greyDark, marginTop: 8 }]}>
-          {message}
+          {l(message)}
         </Text>
       ) : null}
 
       <View style={styles.buttons}>
         {status === 'approving' || status === 'cancelling' || status === 'checking' ? <ActivityIndicator color={colors.primary} /> : null}
-        {actions.cancel ? <Button label="Cancel" kind="secondary" onPress={onCancel} /> : null}
+        {actions.cancel ? <Button label={t('buttons.cancel')} kind="secondary" onPress={onCancel} /> : null}
         {actions.approve ? (
           <Button
-            label={status === 'unverified' ? 'Check again' : status === 'uncertain' ? 'Check and approve' : `Approve ${naira(p.totalNaira)}`}
+            label={status === 'unverified' ? t('card.checkAgain') : status === 'uncertain' ? t('card.checkAndApprove') : t('card.approveAmount', { amount: naira(p.totalNaira) })}
             onPress={onApprove}
           />
         ) : null}
-        {actions.askAgain ? <Button label="Ask again" kind="secondary" onPress={onAskAgain} /> : null}
-        {actions.openOrder && card.order && onOpenOrder ? <Button label="View order" onPress={() => onOpenOrder(card.order!.orderId)} /> : null}
+        {actions.askAgain ? <Button label={t('buttons.askAgain')} kind="secondary" onPress={onAskAgain} /> : null}
+        {actions.openOrder && card.order && onOpenOrder ? <Button label={t('buttons.viewOrder')} onPress={() => onOpenOrder(card.order!.orderId)} /> : null}
       </View>
     </View>
   );
@@ -136,6 +129,8 @@ function Button({ label, onPress, kind = 'primary' }: { label: string; onPress: 
 }
 
 const styles = StyleSheet.create({
+  mode: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingVertical: 2, paddingHorizontal: 8 },
+  modeText: { fontSize: 11 },
   card: { borderWidth: 1.5, borderRadius: 14, padding: 14, marginTop: 8 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   title: { fontSize: 16 },

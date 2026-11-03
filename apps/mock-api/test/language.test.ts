@@ -18,9 +18,12 @@ describe('language codes', () => {
     for (const bad of ['', 'EN', 'fr', 'yoruba', 'pidgin', undefined, null, 1, {}]) assert.equal(isAssistantLanguage(bad), false, String(bad));
   });
 
-  test('Auto adds nothing: the system prompt is the original one', () => {
+  test('Auto adds no language rule, only the English button names', () => {
     assert.equal(languageInstruction('auto'), '');
-    assert.equal(systemPromptFor('auto'), SYSTEM_PROMPT);
+    const prompt = systemPromptFor('auto');
+    assert.ok(prompt.startsWith(SYSTEM_PROMPT));
+    assert.match(prompt.slice(SYSTEM_PROMPT.length), /approve = "Approve"/);
+    assert.doesNotMatch(prompt.slice(SYSTEM_PROMPT.length), /Chosen reply language/);
   });
 
   for (const [code, name] of Object.entries(NAMES)) {
@@ -50,7 +53,7 @@ describe('the agent sends the chosen language to the model', () => {
       const model = new FnModel(() => ({ content: 'ok' }));
       const h = harness({ model });
       await h.agent.handleMessage(ADA, { text: 'rice under 3k', ...(language ? { language } : {}) }, () => {});
-      assert.deepEqual(systemOf(model), { role: 'system', content: SYSTEM_PROMPT });
+      assert.deepEqual(systemOf(model), { role: 'system', content: systemPromptFor('auto') });
     }
   });
 
@@ -72,7 +75,7 @@ describe('the agent sends the chosen language to the model', () => {
     await h.agent.handleMessage(ADA, { sessionId: first.sessionId, text: 'cheaper', language: 'ha' }, () => {});
     await h.agent.handleMessage(ADA, { sessionId: first.sessionId, text: 'ok', language: 'auto' }, () => {});
     assert.equal(systemOf(model, 1).content, systemPromptFor('ha'));
-    assert.equal(systemOf(model, 2).content, SYSTEM_PROMPT);
+    assert.equal(systemOf(model, 2).content, systemPromptFor('auto'));
     assert.equal(model.requests[2]!.messages.filter((m) => m.role === 'system').length, 1);
   });
 

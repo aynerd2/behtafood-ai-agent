@@ -29,7 +29,7 @@ export interface MockServerOptions {
 }
 
 const MAX_BODY_BYTES = 6 * 1024 * 1024; // room for one compressed photo
-const ORDER_STATUSES: OrderStatus[] = ['pending', 'accepted', 'preparing', 'ready', 'rider_assigned', 'picked_up', 'on_the_way', 'delivered', 'cancelled'];
+const ORDER_STATUSES: OrderStatus[] = ['preparing', 'ready', 'rider_assigned', 'picked_up', 'on_the_way', 'delivered', 'collected', 'cancelled'];
 
 const ASSET_DIR = fileURLToPath(new URL('../../../assets/food/', import.meta.url));
 const ASSET_PATH = /^\/assets\/food\/([a-z0-9-]+\.jpg)$/;
@@ -104,6 +104,8 @@ export function createMockServer(opts: MockServerOptions) {
 
       if (req.method === 'POST' && url.pathname === '/api/agent/chat') {
         const body = await readJson(req);
+        // The app's selected saved address; the fee tool only uses it if it is this customer's own.
+        if (typeof body.addressId === 'string' && body.addressId) Object.assign(ctx, { selectedAddressId: body.addressId.slice(0, 64) });
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         const emit = (e: TimelineEvent) => res.write(`data: ${JSON.stringify(e)}\n\n`);
         await agent.handleMessage(

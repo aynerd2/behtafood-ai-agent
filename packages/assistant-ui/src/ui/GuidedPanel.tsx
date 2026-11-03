@@ -15,11 +15,11 @@ import { TrackingCard } from './TrackingCard';
 import { ApprovalCard } from './ApprovalCard';
 import { ChoiceChips } from './Cards';
 import { useAssistantState, useNow } from './hooks';
+import { AssistantI18nProvider, useI18n } from './i18n';
 import { ModeToggle } from './ModeToggle';
 import { PhotoButton, PhotoPreview } from './PhotoAttach';
 import { useAssistantTheme } from './theme';
 
-const SUGGESTIONS = ['Jollof rice and chicken under ₦4,000', 'Find me something filling around ₦3,000'];
 
 export interface GuidedPanelProps {
   controller: AssistantController;
@@ -31,7 +31,18 @@ export interface GuidedPanelProps {
   fly?: { key: string; label: string } | null;
 }
 
-export function GuidedPanel({ controller, session, onModeChange, onClose, onOpenOrder, fly }: GuidedPanelProps) {
+export function GuidedPanel(props: GuidedPanelProps) {
+  const state = useAssistantState(props.controller);
+  return (
+    <AssistantI18nProvider language={state.language}>
+      <GuidedPanelBody {...props} />
+    </AssistantI18nProvider>
+  );
+}
+
+function GuidedPanelBody({ controller, session, onModeChange, onClose, onOpenOrder, fly }: GuidedPanelProps) {
+  const { t, l } = useI18n();
+  const SUGGESTIONS = [t('chip.2'), t('chip.1')];
   const { colors, fonts } = useAssistantTheme();
   const insets = useSafeAreaInsets();
   const state = useAssistantState(controller);
@@ -57,12 +68,12 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
   const working = turn && (turn.status === 'sending' || turn.status === 'running');
   const stepLabel =
     status === 'paused'
-      ? "Paused: you're in control."
+      ? t('guided.paused')
       : status === 'stopped'
-        ? "Stopped. Screens won't move until your next message."
+        ? t('guided.stopped')
         : track && !working
-          ? openDelay(track)?.message ?? latestTrackingLabel(track)
-          : session.current?.label ?? (working ? 'Working…' : 'Ask me for food and a budget.');
+          ? l(openDelay(track)?.message ?? latestTrackingLabel(track))
+          : session.current?.label ? l(session.current.label) : working ? t('row.working') : t('guided.idle');
 
   const send = (text: string) => {
     if ((!text.trim() && !photo) || state.busy) return;
@@ -75,11 +86,11 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
     <View style={styles.controls}>
       <ModeToggle mode="guided" onChange={onModeChange} compact />
       {status === 'paused' ? (
-        <SmallButton icon="play" label="Resume" onPress={() => session.resume()} />
+        <SmallButton icon="play" label={t('guided.resume')} onPress={() => session.resume()} />
       ) : status === 'stopped' ? null : (
-        <SmallButton icon="stop" label="Stop" danger onPress={() => session.stop()} />
+        <SmallButton icon="stop" label={t('guided.stop')} danger onPress={() => session.stop()} />
       )}
-      <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close the assistant" hitSlop={10}>
+      <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel={t('chat.close')} hitSlop={10}>
         <Ionicons name="close" size={22} color={colors.greyDark} />
       </Pressable>
     </View>
@@ -89,7 +100,7 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
     <Pressable
       onPress={() => setExpanded((e) => !e)}
       accessibilityRole="button"
-      accessibilityLabel={sheet ? 'Collapse the assistant' : 'Expand the assistant'}
+      accessibilityLabel={sheet ? t('guided.collapse') : t('guided.expand')}
       style={styles.stepRow}
     >
       {working && status === 'navigating' ? (
@@ -114,13 +125,13 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
       >
         <View style={[styles.panel, { backgroundColor: colors.white, borderColor: colors.greyLight }, sheet && { maxHeight: Dimensions.get('window').height * 0.7 }]}>
           <View style={styles.header}>
-            <Text style={[styles.title, { fontFamily: fonts.bold, color: colors.black }]}>Behtafood Assistant</Text>
+            <Text style={[styles.title, { fontFamily: fonts.bold, color: colors.black }]}>{t('chat.title')}</Text>
             {controls}
           </View>
           {barLine}
           {lastCart ? (
             <Text numberOfLines={2} style={[styles.cartLine, { fontFamily: fonts.regular, color: colors.greyDark }]}>
-              <Ionicons name="cart-outline" size={12} color={colors.primary} /> AI cart:{' '}
+              <Ionicons name="cart-outline" size={12} color={colors.primary} /> {t('guided.aiCart')}{' '}
               {lastCart.items.map((i) => `${i.quantity} x ${i.name}${i.choices?.length ? ` (${choicesText(i.choices)})` : ''}`).join(', ')}
             </Text>
           ) : null}
@@ -162,7 +173,7 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
                 {prompt ? <ChoiceChips prompt={prompt} disabled={state.busy} onPick={(o) => void controller.pickChoice(o)} /> : null}
                 {track ? <TrackingCard tracking={track} onRemind={(p) => void controller.remind(track.orderId, p)} /> : null}
                 {turn && timelineRows(turn, state.cards, now).some((r) => r.status === 'failed') ? (
-                  <Text style={[styles.hint, { fontFamily: fonts.regular, color: colors.greyMedium }]}>Switch to Chat to see every step.</Text>
+                  <Text style={[styles.hint, { fontFamily: fonts.regular, color: colors.greyMedium }]}>{t('guided.switchHint')}</Text>
                 ) : null}
               </ScrollView>
               {photo ? <PhotoPreview photo={photo} onRemove={() => setPhoto(null)} /> : null}
@@ -179,19 +190,19 @@ export function GuidedPanel({ controller, session, onModeChange, onClose, onOpen
                 <TextInput
                   value={draft}
                   onChangeText={setDraft}
-                  placeholder={state.busy ? 'Working on it…' : 'Reply or ask for food'}
+                  placeholder={state.busy ? t('chat.placeholderBusy') : t('guided.placeholder')}
                   placeholderTextColor={colors.greyMedium}
                   editable={!state.busy}
                   style={[styles.input, { fontFamily: fonts.regular, color: colors.black, backgroundColor: colors.offWhite, borderColor: colors.greyLight }]}
                   onSubmitEditing={() => send(draft)}
                   returnKeyType="send"
-                  accessibilityLabel="Message to the assistant"
+                  accessibilityLabel={t('chat.messageLabel')}
                 />
                 <Pressable
                   onPress={() => send(draft)}
                   disabled={state.busy || (!draft.trim() && !photo)}
                   accessibilityRole="button"
-                  accessibilityLabel="Send"
+                  accessibilityLabel={t('buttons.send')}
                   style={[styles.send, { backgroundColor: colors.primary, opacity: state.busy || (!draft.trim() && !photo) ? 0.4 : 1 }]}
                 >
                   <Ionicons name="arrow-up" size={18} color={colors.white} />
@@ -219,6 +230,7 @@ function SmallButton({ icon, label, onPress, danger }: { icon: 'stop' | 'play'; 
 /** A dish label gliding down into the AI's cart (shown on the bar). Display only. */
 function CartFly({ label }: { label: string }) {
   const { colors, fonts } = useAssistantTheme();
+  const { t: tr, l } = useI18n();
   const t = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(t, { toValue: 1, duration: 1100, useNativeDriver: true }).start();
@@ -240,7 +252,7 @@ function CartFly({ label }: { label: string }) {
       ]}
     >
       <Text numberOfLines={1} style={{ color: colors.white, fontFamily: fonts.semibold, fontSize: 13 }}>
-        ＋ {label} → AI cart
+        ＋ {l(label)} → {tr('guided.aiCart').replace(/:$/, '')}
       </Text>
     </Animated.View>
   );

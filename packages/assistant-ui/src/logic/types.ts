@@ -30,6 +30,10 @@ export interface ProposalView {
   deliveryFeeNaira: number;
   discountNaira: number;
   totalNaira: number;
+  /** Delivery or pickup, as the server quoted it (older servers: absent = delivery). */
+  fulfilment?: 'delivery' | 'pickup';
+  /** The wallet balance the server checked before making the card. */
+  walletBalanceNaira?: number;
   expiresAt: string;
   state: string;
 }
@@ -71,7 +75,7 @@ export type CheckResult =
 export type AgentEvent =
   | { type: 'run'; runId: string }
   | { type: 'session'; sessionId: string }
-  | { type: 'step'; tool: string; status: 'done' | 'failed'; label: string; data?: unknown }
+  | { type: 'step'; tool: string; status: 'done' | 'failed'; label: string; labelKey?: string; labelParams?: Record<string, string | number>; data?: unknown }
   | { type: 'awaiting_approval'; proposal: ProposalView; previousTotalNaira?: number }
   | { type: 'reply'; text: string }
   | { type: 'error'; code: string; message: string }

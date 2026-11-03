@@ -39,6 +39,7 @@ import {
   type ReminderParty,
   type TrackingState,
 } from './tracking';
+import { PHOTO_ONLY_TEXT } from './limits';
 
 /**
  * What happened, for guided mode: each new server event exactly once, each
@@ -215,7 +216,7 @@ export class AssistantController {
     const clean = text.trim();
     if ((!clean && !photo) || this.#state.busy) return;
     const turnId = `turn_${++this.#turnSeq}`;
-    this.#set((s) => ({ ...startTurn(s, turnId, clean || 'Find me something like this.', photo), busy: true, tracking: s.tracking, language: s.language }));
+    this.#set((s) => ({ ...startTurn(s, turnId, clean || PHOTO_ONLY_TEXT, photo), busy: true, tracking: s.tracking, language: s.language }));
     this.#emit({ type: 'turn_started', turnId });
     try {
       let runId: string;

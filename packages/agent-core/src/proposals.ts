@@ -27,6 +27,7 @@ import {
   type PlacedOrder,
   type PortErrorCode,
   type Quote,
+  type Fulfilment,
   type QuoteLine,
 } from './port';
 
@@ -43,6 +44,8 @@ export interface Proposal {
   quote: Quote;
   /** Card images (display only). */
   images?: ProposalImages;
+  /** The wallet balance checked just before the card was made (display only). */
+  walletBalanceNaira?: number;
   state: ProposalState;
   createdAt: number;
   expiresAt: number;
@@ -69,6 +72,10 @@ export interface ProposalView {
   deliveryFeeNaira: number;
   discountNaira: number;
   totalNaira: number;
+  /** Delivery or pickup, as quoted (pickup has no delivery fee). */
+  fulfilment: Fulfilment;
+  /** The wallet balance when the card was made. */
+  walletBalanceNaira?: number;
   expiresAt: string;
   state: ProposalState;
 }
@@ -92,10 +99,21 @@ export const UNCERTAIN_MESSAGE = 'We could not confirm the order. Nothing is cha
 export const LOOKUP_FAILED_MESSAGE =
   "We couldn't check whether your order went through. Please look in My Orders before trying again.";
 
+/**
+ * Optional durable storage, so an approval card survives a server restart
+ * within its 10-minute life. The store still works purely in memory without it.
+ * `save` stores the whole proposal; `load` returns it by id (or null).
+ */
+export interface ProposalPersistence {
+  save(p: Proposal): Promise<void>;
+  load(id: string): Promise<Proposal | null>;
+}
+
 export interface ProposalStoreOptions {
   clock?: () => number;
   ttlMs?: number;
   newId?: () => string;
+  persistence?: ProposalPersistence;
 }
 
 export class ProposalStore {
@@ -104,6 +122,7 @@ export class ProposalStore {
   readonly #clock: () => number;
   readonly #ttl: number;
   readonly #newId: () => string;
+  readonly #persistence?: ProposalPersistence;
 
   constructor(
     readonly port: BehtafoodPort,
@@ -112,10 +131,44 @@ export class ProposalStore {
     this.#clock = opts.clock ?? Date.now;
     this.#ttl = opts.ttlMs ?? PROPOSAL_TTL_MS;
     this.#newId = opts.newId ?? (() => `prop_${randomUUID()}`);
+    this.#persistence = opts.persistence;
+  }
+
+  /** Writes a proposal to durable storage (no-op without it). Throws if the write fails. */
+  async persist(p: Proposal): Promise<void> {
+    await this.#persistence?.save(p);
+  }
+
+  /** Best-effort save after a state change; the order itself is the source of truth. */
+  #save(p: Proposal | undefined): void {
+    if (p && this.#persistence) this.#persistence.save(p).catch(() => {});
+  }
+
+  /**
+   * Brings a proposal back from durable storage after a restart. A proposal
+   * that was mid-placement when the server stopped is treated as unconfirmed,
+   * so the next approval looks the order up before doing anything else.
+   */
+  async hydrate(ctx: CustomerContext, id: string): Promise<Proposal | undefined> {
+    const held = this.get(ctx, id);
+    if (held || !this.#persistence) return held;
+    let loaded: Proposal | null = null;
+    try {
+      loaded = await this.#persistence.load(id);
+    } catch {
+      return undefined;
+    }
+    if (!loaded || loaded.customerId !== ctx.customerId) return undefined;
+    if (loaded.state === 'placing') {
+      loaded.state = 'unconfirmed';
+      loaded.outcomeUncertain = true;
+    }
+    this.#byId.set(loaded.id, loaded);
+    return loaded;
   }
 
   /** Records a quoted cart for approval. Any earlier open proposal in the same session is superseded. */
-  create(ctx: CustomerContext, input: { sessionId: string; cart: Cart; quote: Quote; images?: ProposalImages }): Proposal {
+  create(ctx: CustomerContext, input: { sessionId: string; cart: Cart; quote: Quote; images?: ProposalImages; walletBalanceNaira?: number }): Proposal {
     for (const p of this.#byId.values()) {
       if (p.sessionId === input.sessionId && p.customerId === ctx.customerId && p.state === 'awaiting_approval') p.state = 'cancelled';
     }
@@ -127,6 +180,7 @@ export class ProposalStore {
       cart: structuredClone(input.cart),
       quote: structuredClone(input.quote),
       ...(input.images ? { images: structuredClone(input.images) } : {}),
+      ...(input.walletBalanceNaira !== undefined ? { walletBalanceNaira: input.walletBalanceNaira } : {}),
       state: 'awaiting_approval',
       createdAt: now,
       expiresAt: now + this.#ttl,
@@ -152,6 +206,8 @@ export class ProposalStore {
       deliveryFeeNaira: p.quote.deliveryFeeNaira,
       discountNaira: p.quote.discountNaira,
       totalNaira: p.quote.totalNaira,
+      fulfilment: p.quote.fulfilment ?? p.cart.fulfilment ?? 'delivery',
+      ...(p.walletBalanceNaira !== undefined ? { walletBalanceNaira: p.walletBalanceNaira } : {}),
       expiresAt: new Date(p.expiresAt).toISOString(),
       state: p.state,
     };
@@ -161,6 +217,7 @@ export class ProposalStore {
     const p = this.get(ctx, id);
     if (!p || p.state !== 'awaiting_approval') return false;
     p.state = 'cancelled';
+    this.#save(p);
     return true;
   }
 
@@ -170,7 +227,15 @@ export class ProposalStore {
    * the order's checkoutSessionId and the lookup is scoped to the customer.
    */
   async check(ctx: CustomerContext, id: string): Promise<CheckResult> {
-    const p = this.get(ctx, id);
+    const p = await this.hydrate(ctx, id);
+    try {
+      return await this.#check(ctx, id, p);
+    } finally {
+      this.#save(p);
+    }
+  }
+
+  async #check(ctx: CustomerContext, id: string, p: Proposal | undefined): Promise<CheckResult> {
     if (p?.state === 'placed' && p.order) return { status: 'placed', order: p.order };
     const found = await this.#lookup(ctx, id);
     if (found === 'failed') return { status: 'check_failed', message: LOOKUP_FAILED_MESSAGE };
@@ -186,7 +251,12 @@ export class ProposalStore {
   approve(ctx: CustomerContext, id: string): Promise<ApproveResult> {
     const running = this.#inFlight.get(id);
     if (running && this.get(ctx, id)) return running;
-    const attempt = this.#approve(ctx, id).finally(() => this.#inFlight.delete(id));
+    const attempt = this.hydrate(ctx, id)
+      .then(() => this.#approve(ctx, id))
+      .finally(() => {
+        this.#inFlight.delete(id);
+        this.#save(this.get(ctx, id));
+      });
     this.#inFlight.set(id, attempt);
     return attempt;
   }

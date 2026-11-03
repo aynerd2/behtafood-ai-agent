@@ -17,6 +17,9 @@ export interface TimelineStep {
   tool: string;
   status: 'done' | 'failed';
   label: string;
+  /** Translation key + variables from the server (newer servers); the app shows these in the chosen language. */
+  labelKey?: string;
+  labelParams?: Record<string, string | number>;
 }
 
 export interface RestaurantCardData {
@@ -88,6 +91,8 @@ export interface TimelineRow {
   key: string;
   status: RowStatus;
   label: string;
+  labelKey?: string;
+  labelParams?: Record<string, string | number>;
 }
 
 export function initialState(): ConversationState {
@@ -138,7 +143,7 @@ function applyOne(s: ConversationState, turnId: string, stored: StoredEvent): Co
     case 'session':
       return { ...s, sessionId: e.sessionId };
     case 'step': {
-      let next = updateTurn(s, turnId, (t) => ({ ...t, steps: [...t.steps, { seq: stored.seq, tool: e.tool, status: e.status, label: e.label }] }));
+      let next = updateTurn(s, turnId, (t) => ({ ...t, steps: [...t.steps, { seq: stored.seq, tool: e.tool, status: e.status, label: e.label, ...(e.labelKey ? { labelKey: e.labelKey, labelParams: e.labelParams } : {}) }] }));
       const data = asObj(e.data);
       if (e.tool === 'search_restaurants' && e.status === 'done' && Array.isArray(data.restaurants)) {
         const restaurants = data.restaurants.map((r: any) => ({ id: String(r.id), name: String(r.name), deliveryFeeNaira: Number(r.delivery_fee_naira), ...imageOf(r.imageUrl) }));
@@ -200,7 +205,7 @@ const CARD_TOOLS = new Set(['place_order', 'cancel_order']);
 export function timelineRows(turn: Turn, cards: Record<string, ApprovalCardState>, now: number): TimelineRow[] {
   const rows: TimelineRow[] = turn.steps
     .filter((st) => !CARD_TOOLS.has(st.tool))
-    .map((st) => ({ key: `step:${st.seq}`, status: st.status, label: st.label }));
+    .map((st) => ({ key: `step:${st.seq}`, status: st.status, label: st.label, ...(st.labelKey ? { labelKey: st.labelKey, labelParams: st.labelParams } : {}) }));
   for (const id of turn.proposalIds) {
     const card = cards[id];
     if (card) rows.push(cardRow(id, card, now));

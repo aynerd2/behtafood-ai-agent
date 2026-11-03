@@ -44,7 +44,7 @@ describe('timeline data for the app (display only)', () => {
   });
 
   test('a NEEDS_CHOICE step names the item, the group and every option with its extra price', async () => {
-    const { send } = harness({ model: sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_bukka', items: [{ item_id: 'itm_shawarma', quantity: 1 }] })] }]) });
+    const { send } = harness({ model: sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { fulfilment: 'delivery', restaurant_id: 'rst_bukka', items: [{ item_id: 'itm_shawarma', quantity: 1 }] })] }]) });
     const step = lastStep((await send('shawarma')).events);
     assert.equal(step.status, 'failed');
     assert.deepEqual(step.data, {
@@ -56,7 +56,7 @@ describe('timeline data for the app (display only)', () => {
 describe('timeline data for guided mode (display only)', () => {
   test('a built cart names its restaurant and each dish id, so the app can show the real menu item', async () => {
     const { send } = harness({
-      model: sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_bukka', items: [{ item_id: 'itm_shawarma', quantity: 2, choices: [{ group: 'Size', option: 'Jumbo' }] }, { item_id: 'itm_zobo', quantity: 1 }] })] }]),
+      model: sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { fulfilment: 'delivery', restaurant_id: 'rst_bukka', items: [{ item_id: 'itm_shawarma', quantity: 2, choices: [{ group: 'Size', option: 'Jumbo' }] }, { item_id: 'itm_zobo', quantity: 1 }] })] }]),
     });
     const step = lastStep((await send('2 jumbo shawarma and a zobo')).events);
     assert.equal(step.status, 'done');
@@ -68,15 +68,15 @@ describe('timeline data for guided mode (display only)', () => {
   });
 
   test('the model still sees the same short cart summary (no ids added to its view)', async () => {
-    const h = harness({ model: sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_bukka', items: [{ item_id: 'itm_zobo', quantity: 1 }] })] }]) });
+    const h = harness({ model: sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { fulfilment: 'delivery', restaurant_id: 'rst_bukka', items: [{ item_id: 'itm_zobo', quantity: 1 }] })] }]) });
     await h.send('zobo');
     const result = JSON.parse(String((h.agent as any).model.requests[1].messages.at(-1).content));
-    assert.deepEqual(result, { cart_id: 'cart_1', items: [{ name: 'Zobo', quantity: 1 }] });
+    assert.deepEqual(result, { cart_id: 'cart_1', items: [{ name: 'Zobo', quantity: 1 }], fulfilment: 'delivery' });
   });
 });
 
 describe('build_cart with choices', () => {
-  const cartCall = (items: unknown[]) => sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_bukka', items })] }]);
+  const cartCall = (items: unknown[]) => sequenceModel([{ content: null, tool_calls: [toolCall('build_cart', { fulfilment: 'delivery', restaurant_id: 'rst_bukka', items })] }]);
 
   test('a missing required choice fails with the options, so the model can ask', async () => {
     const { send } = harness({ model: cartCall([{ item_id: 'itm_shawarma', quantity: 1 }]) });
@@ -109,7 +109,7 @@ describe('build_cart with choices', () => {
       model: new (await import('./helpers')).FnModel((messages, n) => {
         const last = messages.at(-1);
         const r = last?.role === 'tool' ? JSON.parse(String(last.content)) : {};
-        if (n === 1) return { content: null, tool_calls: [toolCall('build_cart', { restaurant_id: 'rst_bukka', items: [{ item_id: 'itm_shawarma', quantity: 2, choices: [{ group: 'Size', option: 'Jumbo' }] }] })] };
+        if (n === 1) return { content: null, tool_calls: [toolCall('build_cart', { fulfilment: 'delivery', restaurant_id: 'rst_bukka', items: [{ item_id: 'itm_shawarma', quantity: 2, choices: [{ group: 'Size', option: 'Jumbo' }] }] })] };
         if (n === 2) return { content: null, tool_calls: [toolCall('quote_order', { cart_id: r.cart_id })] };
         if (n === 3) return { content: null, tool_calls: [toolCall('propose_order', { quote_id: r.quote_id })] };
         return { content: 'ok' };
@@ -154,7 +154,7 @@ describe('offline scripted demo', () => {
     const first = await h.send('I want chicken shawarma, budget 5000');
     const reply = (first.events.find((e) => e.type === 'reply') as any).text as string;
     assert.match(reply, /Chicken Shawarma \(Size: Regular\)/);
-    const second = await h.send('the first one', first.sessionId);
+    const second = await h.send('the first one, delivery', first.sessionId);
     const card = (second.events.find((e) => e.type === 'awaiting_approval') as any)?.proposal;
     assert.ok(card, JSON.stringify(second.events));
     assert.deepEqual(card.lines.find((l: any) => l.itemId === 'itm_shawarma').choices, [{ group: 'Size', option: 'Regular', priceNaira: 0 }]);

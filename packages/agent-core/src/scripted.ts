@@ -124,14 +124,17 @@ export class ScriptedDemoModel implements ModelClient {
     const userText = textOf(messages[lastUser]);
     // Tool results produced since the customer's latest message.
     const since = toolResults(messages).slice(toolResults(messages.slice(0, lastUser + 1)).length);
-    const reply = (content: string) => ({ content });
+    // Every turn ends with send_reply, like the real model is told to.
+    const reply = (text: string) => ({ content: null, tool_calls: [call('send_reply', { text, in_scope: true })] });
 
     if (since.length === 0) {
       const pick = parsePick(userText);
       const { options } = computeOptions(messages.slice(0, lastUser));
       const chosen = pick !== undefined ? options[pick - 1] : undefined;
       if (chosen) {
-        return { content: null, tool_calls: [call('build_cart', { restaurant_id: chosen.restaurantId, items: chosen.items.map((i) => ({ item_id: i.id, quantity: 1, ...(i.choices.length ? { choices: i.choices } : {}) })) })] };
+        // Delivery or pickup only as the customer said it; otherwise build_cart asks.
+        const fulfilment = /\bpick\s?up\b|\bcollect\b/i.test(userText) ? 'pickup' : /\bdeliver/i.test(userText) ? 'delivery' : undefined;
+        return { content: null, tool_calls: [call('build_cart', { restaurant_id: chosen.restaurantId, items: chosen.items.map((i) => ({ item_id: i.id, quantity: 1, ...(i.choices.length ? { choices: i.choices } : {}) })), ...(fulfilment ? { fulfilment } : {}) })] };
       }
       if (/last time|same (thing|order)|again/i.test(userText)) return { content: null, tool_calls: [call('get_my_recent_orders', {})] };
       const words = FOOD_WORDS.filter((w) => userText.toLowerCase().includes(w));
@@ -144,6 +147,7 @@ export class ScriptedDemoModel implements ModelClient {
 
     const last = since.at(-1)!;
     const error = typeof last.result.error === 'string' ? String(last.result.message ?? last.result.error) : undefined;
+    if (last.result.error === 'NEEDS_FULFILMENT') return reply('Delivery or pickup? Reply with the option number and delivery or pickup.');
     if (error) return reply(`Sorry, that did not work: ${error}`);
 
     switch (last.name) {

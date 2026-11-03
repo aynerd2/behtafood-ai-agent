@@ -22,6 +22,13 @@ export interface AssistantFonts {
   medium: string;
   semibold: string;
   bold: string;
+  /**
+   * The reply text. Defaults to regular/bold; the Customer app passes Noto
+   * Sans, the one candidate that covers every Yoruba, Hausa and Igbo letter
+   * and tone mark (docs/sample-fonts.png).
+   */
+  replyRegular?: string;
+  replyBold?: string;
 }
 
 export interface AssistantTheme {

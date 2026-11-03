@@ -10,6 +10,8 @@
 
 export interface CustomerContext {
   customerId: string;
+  /** The saved address the app has selected, as the app sent it. Only used when it is one of this customer's own. */
+  selectedAddressId?: string;
 }
 
 export interface RestaurantSummary {
@@ -60,9 +62,27 @@ export interface CartLine {
   choices?: CartChoice[];
 }
 
+/** How the customer gets the food. The customer chooses; the assistant never picks for them. */
+export type Fulfilment = 'delivery' | 'pickup';
+export const FULFILMENTS: readonly Fulfilment[] = ['delivery', 'pickup'];
+
+/**
+ * What this customer can use at this restaurant, from the server:
+ * delivery needs the restaurant to deliver, a map location for it, and a saved
+ * delivery address for the customer; pickup needs only the restaurant to offer it.
+ */
+export interface FulfilmentOptions {
+  delivery: boolean;
+  pickup: boolean;
+  /** Why delivery is not possible, when it is not. */
+  deliveryUnavailable?: 'restaurant' | 'no_coordinates' | 'no_address';
+}
+
 export interface Cart {
   restaurantId: string;
   lines: CartLine[];
+  /** Absent only on carts from older callers; it then means delivery. */
+  fulfilment?: Fulfilment;
 }
 
 export interface QuoteLine {
@@ -82,23 +102,27 @@ export interface Quote {
   restaurantName: string;
   lines: QuoteLine[];
   subtotalNaira: number;
+  /** 0 for pickup. */
   deliveryFeeNaira: number;
   discountNaira: number;
   totalNaira: number;
+  fulfilment: Fulfilment;
 }
 
+// Orders are accepted automatically, so there is no "waiting" or "accepted"
+// stage: an order starts at preparing. A pickup order never has rider stages
+// and ends at collected.
 export type OrderStatus =
-  | 'pending'
-  | 'accepted'
   | 'preparing'
   | 'ready'
   | 'rider_assigned'
   | 'picked_up'
   | 'on_the_way'
   | 'delivered'
+  | 'collected'
   | 'cancelled';
 
-export const FINAL_ORDER_STATUSES: readonly OrderStatus[] = ['delivered', 'cancelled'];
+export const FINAL_ORDER_STATUSES: readonly OrderStatus[] = ['delivered', 'collected', 'cancelled'];
 
 export interface PlacedOrder {
   orderId: string;
@@ -127,6 +151,38 @@ export interface OrderStatusInfo {
   status: OrderStatus;
   updatedAt: string;
   riderAssigned: boolean;
+  /** The order's real fulfilment. Missing means delivery (older backends). */
+  fulfilment?: Fulfilment;
+}
+
+/** One of the customer's saved addresses (never a live GPS fix). */
+export interface SavedAddress {
+  id: string;
+  /** What the customer calls it, e.g. "Home" or "Hostel", when known. */
+  label: string;
+  /** Street and city, for matching and display. */
+  text: string;
+  isDefault: boolean;
+}
+
+/** The checkout delivery fee, itemised. Every amount comes from the server. */
+export interface DeliveryFeeQuote {
+  restaurantId: string;
+  restaurantName: string;
+  /** False when the address is beyond the restaurant's range; the amounts are then 0. */
+  inRange: boolean;
+  outOfRangeReason?: string;
+  distanceKm: number;
+  baseFeeNaira: number;
+  perKmFeeNaira: number;
+  /** Total of all surcharges (rain, storm, night, demand...). 0 when none apply. */
+  surgeNaira: number;
+  /** The server's own reason lines, e.g. "+₦200 — moderate rain in your area". */
+  surgeReasons: string[];
+  /** Exactly what checkout charges for delivery: base, distance and surge together. */
+  totalFeeNaira: number;
+  /** Pickup has no delivery fee. */
+  pickupAvailable: boolean;
 }
 
 export type NudgeParty = 'vendor' | 'rider';
@@ -137,6 +193,7 @@ export type PortErrorCode =
   | 'INSUFFICIENT_BALANCE'
   | 'INVALID_CART'
   | 'NOT_FOUND'
+  | 'NO_ADDRESS'
   | 'FORBIDDEN';
 
 /**
@@ -166,8 +223,10 @@ export interface BehtafoodPort {
   /** Open restaurants only (closed and admin-closed are excluded). */
   searchRestaurants(ctx: CustomerContext, query: { text: string; limit: number }): Promise<RestaurantSummary[]>;
   getMenu(ctx: CustomerContext, restaurantId: string): Promise<MenuItemSummary[]>;
+  /** Which of delivery and pickup this customer can use at this restaurant. */
+  getFulfilmentOptions(ctx: CustomerContext, restaurantId: string): Promise<FulfilmentOptions>;
   getRecentOrders(ctx: CustomerContext, limit: number): Promise<OrderSummary[]>;
-  /** Throws PortError RESTAURANT_CLOSED / ITEM_UNAVAILABLE / INVALID_CART. */
+  /** Prices the cart for its fulfilment exactly as checkout does. Throws PortError RESTAURANT_CLOSED / ITEM_UNAVAILABLE / INVALID_CART. */
   quoteOrder(ctx: CustomerContext, cart: Cart): Promise<Quote>;
   getWalletBalance(ctx: CustomerContext): Promise<number>;
   /** Wallet payment only. Idempotent on checkoutSessionId. */
@@ -175,6 +234,10 @@ export interface BehtafoodPort {
   findOrderByCheckoutSession(ctx: CustomerContext, checkoutSessionId: string): Promise<PlacedOrder | null>;
   /** Throws PortError NOT_FOUND for an order that is not this customer's. */
   getOrderStatus(ctx: CustomerContext, orderId: string): Promise<OrderStatusInfo>;
+  /** The customer's saved addresses, from their own account. */
+  getSavedAddresses(ctx: CustomerContext): Promise<SavedAddress[]>;
+  /** The delivery fee checkout would charge from this restaurant to this saved address, surcharges included. Read only. */
+  quoteDeliveryFee(ctx: CustomerContext, restaurantId: string, addressId: string): Promise<DeliveryFeeQuote>;
   /** Sends a fixed, templated push message to the vendor or rider of the order. */
   sendNudge(ctx: CustomerContext, req: { orderId: string; party: NudgeParty; message: string }): Promise<void>;
 }

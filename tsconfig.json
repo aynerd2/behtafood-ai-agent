@@ -13,6 +13,6 @@
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["packages/*/src", "packages/*/test", "apps/*/src", "apps/*/test"],
+  "include": ["packages/*/src", "packages/*/test", "apps/*/src", "apps/*/test", "scripts"],
   "exclude": ["packages/assistant-ui/src/ui", "packages/assistant-ui/src/index.ts"]
 }

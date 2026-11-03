@@ -11,3 +11,6 @@ export * from './prompt';
 export * from './tools';
 export * from './agent';
 export * from './scripted';
+export * from './text';
+export * from './scope';
+export * from './messages';

@@ -81,7 +81,7 @@ describe('images reach the app cards, never the model', () => {
     const menu = t1.events.find((e) => e.type === 'step' && e.tool === 'get_menu') as any;
     for (const i of menu.data.items) fileOf(i.imageUrl);
 
-    const t2 = await h.send('I will take option 1', t1.sessionId);
+    const t2 = await h.send('I will take option 1, delivered', t1.sessionId);
     const cart = t2.events.find((e) => e.type === 'step' && e.tool === 'build_cart') as any;
     for (const i of cart.data.items) fileOf(i.imageUrl);
     const card = t2.events.find((e) => e.type === 'awaiting_approval') as any;
@@ -96,7 +96,7 @@ describe('images reach the app cards, never the model', () => {
   test('a price-changed proposal keeps its images', async () => {
     const h = harness({ model: new ScriptedDemoModel() });
     const t1 = await h.send(DEMO_ASK);
-    const t2 = await h.send('I will take option 1', t1.sessionId);
+    const t2 = await h.send('I will take option 1, delivered', t1.sessionId);
     const card = t2.events.find((e) => e.type === 'awaiting_approval') as any;
     h.port.setPrice(card.proposal.lines[0].itemId, card.proposal.lines[0].unitPriceNaira + 100);
     const r = await h.agent.proposals.approve(ADA, card.proposal.proposalId);

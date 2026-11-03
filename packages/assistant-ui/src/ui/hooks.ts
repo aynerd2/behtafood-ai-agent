@@ -13,7 +13,7 @@ export function useAssistantController(opts: AgentClientOptions & { language?: A
   if (!ref.current) {
     ref.current = new AssistantController({
       // The URL is fixed for the app's lifetime; the token is read per request.
-      client: createAgentClient({ apiUrl: opts.apiUrl, getToken: () => optsRef.current.getToken() }),
+      client: createAgentClient({ apiUrl: opts.apiUrl, getToken: () => optsRef.current.getToken(), getAddressId: () => optsRef.current.getAddressId?.() }),
       // Only the first value counts; later changes go through setLanguage.
       language: opts.language,
     });

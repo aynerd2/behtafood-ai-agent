@@ -19,18 +19,18 @@ import { ADA, FakeClock, TUNDE } from './helpers';
 const MIN = 60_000;
 
 describe('delay thresholds from settings', () => {
-  test('defaults: accepted 10 min, ready without rider 10 min, on the way 40 min', () => {
-    assert.deepEqual(DEFAULT_DELAY_THRESHOLDS, { acceptedMs: 10 * MIN, readyNoRiderMs: 10 * MIN, onTheWayMs: 40 * MIN });
+  test('defaults: preparing 30 min, ready without rider 10 min, on the way 40 min', () => {
+    assert.deepEqual(DEFAULT_DELAY_THRESHOLDS, { preparingMs: 30 * MIN, readyNoRiderMs: 10 * MIN, onTheWayMs: 40 * MIN });
     assert.deepEqual(delayThresholdsFromEnv({}), DEFAULT_DELAY_THRESHOLDS);
   });
 
   test('each threshold can be set in minutes, decimals allowed; bad values fall back', () => {
-    const t = delayThresholdsFromEnv({ AGENT_DELAY_ACCEPTED_MINUTES: '5', AGENT_DELAY_READY_NO_RIDER_MINUTES: '0.5', AGENT_DELAY_ON_THE_WAY_MINUTES: 'soon' });
-    assert.deepEqual(t, { acceptedMs: 5 * MIN, readyNoRiderMs: 30_000, onTheWayMs: 40 * MIN });
+    const t = delayThresholdsFromEnv({ AGENT_DELAY_PREPARING_MINUTES: '5', AGENT_DELAY_READY_NO_RIDER_MINUTES: '0.5', AGENT_DELAY_ON_THE_WAY_MINUTES: 'soon' });
+    assert.deepEqual(t, { preparingMs: 5 * MIN, readyNoRiderMs: 30_000, onTheWayMs: 40 * MIN });
   });
 
   test('a demo setting makes every threshold a few seconds, but never in production', () => {
-    assert.deepEqual(delayThresholdsFromEnv({ AGENT_DELAY_DEMO_SECONDS: '20' }), { acceptedMs: 20_000, readyNoRiderMs: 20_000, onTheWayMs: 20_000 });
+    assert.deepEqual(delayThresholdsFromEnv({ AGENT_DELAY_DEMO_SECONDS: '20' }), { preparingMs: 20_000, readyNoRiderMs: 20_000, onTheWayMs: 20_000 });
     assert.deepEqual(delayThresholdsFromEnv({ AGENT_DELAY_DEMO_SECONDS: '20', NODE_ENV: 'production' }), DEFAULT_DELAY_THRESHOLDS);
   });
 });
@@ -39,12 +39,26 @@ describe('detectDelay (fixed messages, no model)', () => {
   const T = DEFAULT_DELAY_THRESHOLDS;
   const at = (ms: number) => ({ sinceMs: 0, now: ms });
 
-  test('accepted but not preparing after the threshold: remind the restaurant', () => {
-    assert.equal(detectDelay({ status: 'accepted', riderAssigned: false }, at(10 * MIN - 1).sinceMs, at(10 * MIN - 1).now, T), null);
-    const d = detectDelay({ status: 'accepted', riderAssigned: false }, 0, 12 * MIN, T)!;
-    assert.equal(d.kind, 'not_preparing');
+  test('preparing too long: remind the restaurant (delivery and pickup alike)', () => {
+    assert.equal(detectDelay({ status: 'preparing', riderAssigned: false }, at(30 * MIN - 1).sinceMs, at(30 * MIN - 1).now, T), null);
+    for (const fulfilment of ['delivery', 'pickup'] as const) {
+      const d = detectDelay({ status: 'preparing', riderAssigned: false, fulfilment }, 0, 32 * MIN, T)!;
+      assert.equal(d.kind, 'long_preparing');
+      assert.deepEqual(d.parties, ['vendor']);
+      assert.equal(d.message, 'The restaurant has been preparing your order for 32 minutes. Would you like to send a polite reminder?');
+    }
+  });
+
+  test('a rider assigned but not picked up: remind the restaurant', () => {
+    const d = detectDelay({ status: 'rider_assigned', riderAssigned: true }, 0, 11 * MIN, T)!;
+    assert.equal(d.kind, 'not_collected');
     assert.deepEqual(d.parties, ['vendor']);
-    assert.equal(d.message, "Your order was accepted 12 minutes ago and hasn't started preparing yet. Would you like to send a polite reminder?");
+  });
+
+  test('a pickup order never gets a rider rule, even if the record says otherwise', () => {
+    for (const status of ['ready', 'rider_assigned', 'on_the_way'] as const) {
+      assert.equal(detectDelay({ status, riderAssigned: false, fulfilment: 'pickup' }, 0, 999 * MIN, T), null, status);
+    }
   });
 
   test('ready with no rider after the threshold: remind the restaurant', () => {
@@ -64,13 +78,13 @@ describe('detectDelay (fixed messages, no model)', () => {
   });
 
   test('short demo thresholds read in seconds; no promise of a delivery time', () => {
-    const d = detectDelay({ status: 'ready', riderAssigned: false }, 0, 25_000, { acceptedMs: 20_000, readyNoRiderMs: 20_000, onTheWayMs: 20_000 })!;
+    const d = detectDelay({ status: 'ready', riderAssigned: false }, 0, 25_000, { preparingMs: 20_000, readyNoRiderMs: 20_000, onTheWayMs: 20_000 })!;
     assert.match(d.message, /ready for 25 seconds/);
     assert.doesNotMatch(d.message, /will arrive|arrive in|soon|ETA/i);
   });
 
   test('no delay for other stages, finished orders, or ready with a rider', () => {
-    for (const status of ['pending', 'preparing', 'rider_assigned', 'picked_up', 'delivered', 'cancelled'] as const) {
+    for (const status of ['picked_up', 'delivered', 'collected', 'cancelled'] as const) {
       assert.equal(detectDelay({ status, riderAssigned: false }, 0, 999 * MIN, T), null, status);
     }
     assert.equal(detectDelay({ status: 'ready', riderAssigned: true }, 0, 999 * MIN, T), null);

@@ -41,10 +41,18 @@ export class FnModel implements ModelClient {
     readonly model = 'test-model',
     readonly usage: Usage = SMALL_USAGE,
   ) {}
+  /** When false, plain-text replies are passed through as-is (to test the missing-flag path). */
+  wrapPlainReplies = true;
   async complete(req: ModelRequest): Promise<ModelResponse> {
     this.calls += 1;
     this.requests.push(structuredClone(req));
-    return { message: { role: 'assistant', ...this.decide(req.messages, this.calls) }, usage: this.usage };
+    const turn = this.decide(req.messages, this.calls);
+    // Older fakes answer in plain text; the agent now requires send_reply, so
+    // wrap it the way an obedient model would (in scope).
+    if (this.wrapPlainReplies && !turn.tool_calls?.length && typeof turn.content === 'string') {
+      return { message: { role: 'assistant', content: null, tool_calls: [toolCall('send_reply', { text: turn.content, in_scope: true })] }, usage: this.usage };
+    }
+    return { message: { role: 'assistant', ...turn }, usage: this.usage };
   }
 }
 

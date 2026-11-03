@@ -7,35 +7,37 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { openDelay, trackingRows, type ReminderParty, type TrackingState } from '../logic/tracking';
 import { ActionTimeline } from './ActionTimeline';
+import { useI18n } from './i18n';
 import { useAssistantTheme } from './theme';
 
-const REMIND_LABEL: Record<ReminderParty, string> = { vendor: 'Remind the restaurant', rider: 'Remind the rider' };
+const REMIND_KEY = { vendor: 'tracking.remindVendor', rider: 'tracking.remindRider' } as const satisfies Record<ReminderParty, string>;
 
-export function TrackingCard({ tracking, onRemind }: { tracking: TrackingState; onRemind: (party: ReminderParty) => void }) {
+export function TrackingCard({ tracking, onRemind, fulfilment }: { tracking: TrackingState; onRemind: (party: ReminderParty) => void; fulfilment?: 'delivery' | 'pickup' }) {
   const { colors, fonts } = useAssistantTheme();
+  const { t } = useI18n();
   const delay = openDelay(tracking);
   return (
     <View style={[styles.card, { borderColor: colors.greyLight, backgroundColor: colors.white }]}>
       <View style={styles.head}>
-        <Ionicons name="bicycle-outline" size={18} color={colors.primary} />
-        <Text style={[styles.title, { fontFamily: fonts.bold, color: colors.black }]}>Tracking {tracking.reference}</Text>
+        <Ionicons name={fulfilment === 'pickup' ? 'bag-handle-outline' : 'bicycle-outline'} size={18} color={colors.primary} />
+        <Text style={[styles.title, { fontFamily: fonts.bold, color: colors.black }]}>{t('tracking.heading', { reference: tracking.reference })} · {t(fulfilment === 'pickup' ? 'card.mode.pickup' : 'card.mode.delivery')}</Text>
       </View>
       <ActionTimeline rows={trackingRows(tracking)} />
       {delay ? (
         <View style={styles.buttons}>
           {tracking.sending ? <ActivityIndicator color={colors.primary} /> : null}
           {delay.parties
-            .filter((p) => p === 'vendor' || tracking.riderAssigned)
+            .filter((p) => p === 'vendor' || (tracking.fulfilment === 'delivery' && tracking.riderAssigned))
             .map((p) => (
               <Pressable
                 key={p}
                 disabled={!!tracking.sending}
                 onPress={() => onRemind(p)}
                 accessibilityRole="button"
-                accessibilityLabel={REMIND_LABEL[p]}
+                accessibilityLabel={t(REMIND_KEY[p])}
                 style={({ pressed }) => [styles.button, { borderColor: colors.primary, backgroundColor: colors.primary, opacity: tracking.sending ? 0.5 : pressed ? 0.8 : 1 }]}
               >
-                <Text style={{ color: colors.white, fontFamily: fonts.semibold, fontSize: 14 }}>{REMIND_LABEL[p]}</Text>
+                <Text style={{ color: colors.white, fontFamily: fonts.semibold, fontSize: 14 }}>{t(REMIND_KEY[p])}</Text>
               </Pressable>
             ))}
         </View>

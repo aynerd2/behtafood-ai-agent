@@ -79,7 +79,7 @@ async function demo() {
   if (!orderId) return;
   console.log('\n[The vendor and rider act; status updates arrive with zero model calls]');
   const before = agent.usage.report().modelCalls;
-  for (const s of ['accepted', 'preparing', 'rider_assigned', 'on_the_way', 'delivered'] as OrderStatus[]) {
+  for (const s of ['ready', 'rider_assigned', 'on_the_way', 'delivered'] as OrderStatus[]) {
     port.advanceOrder(orderId, s);
     const st = await port.getOrderStatus(ADA, orderId);
     console.log(`  • ${st.reference}: ${st.status.replace(/_/g, ' ')}`);

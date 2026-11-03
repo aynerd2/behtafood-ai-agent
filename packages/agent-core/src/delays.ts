@@ -1,23 +1,29 @@
 // Delay detection for a placed order: fixed rules and fixed messages, no model.
 //
-//   accepted but not preparing   > acceptedMs       -> remind the restaurant
-//   ready but no rider           > readyNoRiderMs   -> remind the restaurant
-//   on the way                   > onTheWayMs       -> remind the rider
+//   preparing                          > preparingMs      -> remind the restaurant
+//   delivery: ready but no rider       > readyNoRiderMs   -> remind the restaurant
+//   delivery: rider assigned, not yet
+//             picked up                > readyNoRiderMs   -> remind the restaurant
+//   delivery: on the way               > onTheWayMs       -> remind the rider
+//
+// Orders are accepted automatically, so there is no "not accepted" rule. A
+// pickup order only ever gets the preparing rule: it has no rider, and the
+// customer is the one who collects it.
 //
 // Messages state how long a stage has lasted, measured from the backend's own
 // timestamps. They never promise or estimate a delivery time.
 
-import type { NudgeParty, OrderStatus, OrderStatusInfo } from './port';
+import type { Fulfilment, NudgeParty, OrderStatus, OrderStatusInfo } from './port';
 
 export interface DelayThresholds {
-  acceptedMs: number;
+  preparingMs: number;
   readyNoRiderMs: number;
   onTheWayMs: number;
 }
 
 const MIN = 60_000;
 
-export const DEFAULT_DELAY_THRESHOLDS: DelayThresholds = { acceptedMs: 10 * MIN, readyNoRiderMs: 10 * MIN, onTheWayMs: 40 * MIN };
+export const DEFAULT_DELAY_THRESHOLDS: DelayThresholds = { preparingMs: 30 * MIN, readyNoRiderMs: 10 * MIN, onTheWayMs: 40 * MIN };
 
 type Env = Record<string, string | undefined>;
 
@@ -27,7 +33,7 @@ function minutes(raw: string | undefined, fallbackMs: number): number {
 }
 
 /**
- * AGENT_DELAY_ACCEPTED_MINUTES, AGENT_DELAY_READY_NO_RIDER_MINUTES and
+ * AGENT_DELAY_PREPARING_MINUTES, AGENT_DELAY_READY_NO_RIDER_MINUTES and
  * AGENT_DELAY_ON_THE_WAY_MINUTES (decimals allowed). AGENT_DELAY_DEMO_SECONDS
  * sets all three to a few seconds for a live demo; it is ignored in production.
  */
@@ -35,16 +41,16 @@ export function delayThresholdsFromEnv(env: Env): DelayThresholds {
   const demo = Number(env.AGENT_DELAY_DEMO_SECONDS);
   if (env.NODE_ENV !== 'production' && Number.isFinite(demo) && demo > 0) {
     const ms = Math.round(demo * 1000);
-    return { acceptedMs: ms, readyNoRiderMs: ms, onTheWayMs: ms };
+    return { preparingMs: ms, readyNoRiderMs: ms, onTheWayMs: ms };
   }
   return {
-    acceptedMs: minutes(env.AGENT_DELAY_ACCEPTED_MINUTES, DEFAULT_DELAY_THRESHOLDS.acceptedMs),
+    preparingMs: minutes(env.AGENT_DELAY_PREPARING_MINUTES, DEFAULT_DELAY_THRESHOLDS.preparingMs),
     readyNoRiderMs: minutes(env.AGENT_DELAY_READY_NO_RIDER_MINUTES, DEFAULT_DELAY_THRESHOLDS.readyNoRiderMs),
     onTheWayMs: minutes(env.AGENT_DELAY_ON_THE_WAY_MINUTES, DEFAULT_DELAY_THRESHOLDS.onTheWayMs),
   };
 }
 
-export type DelayKind = 'not_preparing' | 'no_rider' | 'long_delivery';
+export type DelayKind = 'long_preparing' | 'no_rider' | 'not_collected' | 'long_delivery';
 
 export interface Delay {
   kind: DelayKind;
@@ -67,18 +73,22 @@ function duration(ms: number): string {
 const ASK = ' Would you like to send a polite reminder?';
 
 export function detectDelay(
-  order: { status: OrderStatus; riderAssigned: boolean },
+  order: { status: OrderStatus; riderAssigned: boolean; fulfilment?: Fulfilment },
   sinceMs: number,
   now: number,
   t: DelayThresholds,
 ): Delay | null {
   const elapsedMs = Math.max(0, now - sinceMs);
   const d = duration(elapsedMs);
-  if (order.status === 'accepted' && elapsedMs > t.acceptedMs) {
-    return { kind: 'not_preparing', parties: ['vendor'], elapsedMs, message: `Your order was accepted ${d} ago and hasn't started preparing yet.${ASK}` };
+  if (order.status === 'preparing' && elapsedMs > t.preparingMs) {
+    return { kind: 'long_preparing', parties: ['vendor'], elapsedMs, message: `The restaurant has been preparing your order for ${d}.${ASK}` };
   }
+  if (order.fulfilment === 'pickup') return null;
   if (order.status === 'ready' && !order.riderAssigned && elapsedMs > t.readyNoRiderMs) {
     return { kind: 'no_rider', parties: ['vendor'], elapsedMs, message: `Your food has been ready for ${d} and no rider has been assigned yet.${ASK}` };
+  }
+  if (order.status === 'rider_assigned' && elapsedMs > t.readyNoRiderMs) {
+    return { kind: 'not_collected', parties: ['vendor'], elapsedMs, message: `A rider was assigned ${d} ago and hasn't picked up your food yet.${ASK}` };
   }
   if (order.status === 'on_the_way' && elapsedMs > t.onTheWayMs) {
     return { kind: 'long_delivery', parties: ['rider'], elapsedMs, message: `Your rider has been on the way for ${d}.${ASK}` };

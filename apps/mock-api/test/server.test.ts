@@ -60,7 +60,7 @@ describe('mock API server', () => {
       assert.ok(session && session.type === 'session');
       assert.ok(e1.some((e) => e.type === 'reply'));
 
-      const e2 = await chat(s.base, { message: '1', sessionId: session.sessionId });
+      const e2 = await chat(s.base, { message: '1, delivery', sessionId: session.sessionId });
       const card = e2.find((e) => e.type === 'awaiting_approval');
       assert.ok(card && card.type === 'awaiting_approval');
 

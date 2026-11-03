@@ -44,7 +44,7 @@ export function FadeSlideIn({ children, animate = true, style }: { children: Rea
 }
 
 /** Three bouncing dots. With reduced motion they stay still. */
-export function TypingDots({ color }: { color: string }) {
+export function TypingDots({ color, label }: { color: string; label?: string }) {
   const reduce = useReduceMotion();
   const dots = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
   useEffect(() => {
@@ -62,7 +62,7 @@ export function TypingDots({ color }: { color: string }) {
     return () => loop.stop();
   }, [reduce, dots]);
   return (
-    <View style={styles.dots} accessibilityLabel="The assistant is working">
+    <View style={styles.dots} accessibilityLabel={label}>
       {dots.map((d, i) => (
         <Animated.View
           key={i}
@@ -95,7 +95,21 @@ export function PopIn({ children, animate = true }: { children: ReactNode; anima
  * shows it all at once; reduced motion shows it all at once too. The full text
  * is always available to screen readers.
  */
-export function RevealText({ text, animate = true, style }: { text: string; animate?: boolean; style?: StyleProp<TextStyle> }) {
+export function RevealText({
+  text,
+  animate = true,
+  style,
+  renderDone,
+  hint,
+}: {
+  text: string;
+  animate?: boolean;
+  style?: StyleProp<TextStyle>;
+  /** The finished reply, laid out (paragraphs, bold dish names and prices). */
+  renderDone?: () => React.ReactNode;
+  /** Accessibility hint while revealing, in the chosen language. */
+  hint?: string;
+}) {
   const reduce = useReduceMotion();
   const run = animate && !reduce && revealDurationMs(text) > 0;
   const [shown, setShown] = useState(run ? 0 : text.length);
@@ -115,8 +129,8 @@ export function RevealText({ text, animate = true, style }: { text: string; anim
   }, [text, run, skipped]);
   const done = shown >= text.length;
   return (
-    <Pressable onPress={() => setSkipped(true)} disabled={done} accessibilityLabel={text} accessibilityHint={done ? undefined : 'Tap to show the whole reply'}>
-      <Text style={style}>{done ? text : text.slice(0, shown)}</Text>
+    <Pressable onPress={() => setSkipped(true)} disabled={done} accessibilityLabel={text} accessibilityHint={done ? undefined : hint}>
+      {done && renderDone ? renderDone() : <Text style={style}>{done ? text : text.slice(0, shown)}</Text>}
     </Pressable>
   );
 }
